@@ -42,9 +42,8 @@ def run_scheduled_scraper():
 
 def scheduler_worker():
     """Background worker for the scheduler"""
-    run_scheduled_scraper()  # Initial run on startup
     # Schedule scraper to run every Monday at 00:00 UTC
-    # schedule.every().monday.at("00:00").do(run_scheduled_scraper)
+    schedule.every().monday.at("00:00").do(run_scheduled_scraper)
 
     logger.info("Scheduler started - will run every Monday at 00:00 UTC")
 

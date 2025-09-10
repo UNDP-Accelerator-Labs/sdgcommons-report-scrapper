@@ -13,3 +13,7 @@ lxml==4.9.3
 Werkzeug==3.0.1
 gunicorn==21.2.0
 waitress==3.0.0
+flask-swagger-ui
+Flask-Cors
+python-docx
+python-dotenv

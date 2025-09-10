@@ -1,0 +1,192 @@
+openapi: "3.1.0"
+info:
+  title: SDG Commons Reports Scraper API
+  version: "1.0.0"
+  description: >
+    API for scraping UNDP reports, uploading files, saving to DB and embedding documents.
+servers:
+  - url: http://localhost:8080
+paths:
+  /:
+    get:
+      summary: Root
+      responses:
+        "200":
+          description: API info
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+        "503":
+          description: Unhealthy
+  /scraper/status:
+    get:
+      summary: Scraper status
+      responses:
+        "200":
+          description: Status info
+  /scraper/run:
+    post:
+      summary: Trigger scheduled scraper (background)
+      responses:
+        "202":
+          description: Started
+  /scraper/upload:
+    post:
+      summary: Upload a file, parse it and optionally save/embed
+      description: >
+        Upload a file (PDF, DOCX, HTML or plain text). Set `save=true` to persist the parsed document
+        (when saving, the request must include the API key either as header X-API-KEY or query param `api_key`).
+        To request embedding, provide a JSON string in the `embed` form field matching the EmbedPayload schema.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Document to upload (PDF/DOCX/HTML/TXT)
+                report_type:
+                  type: string
+                  description: Optional report type (e.g. AILA, DRA)
+                country:
+                  type: string
+                  description: Optional country name
+                title:
+                  type: string
+                  description: Optional title to use instead of generated title
+                save:
+                  type: boolean
+                  description: When true the request will save the parsed document to DB (requires API key)
+                embed:
+                  type: string
+                  description: >-
+                    Optional JSON string (must be a JSON object) that conforms to the EmbedPayload schema.
+                    Example: '{"token":"...","write_access":"...","api_url":"https://nlp.example","db":"mydb","prefix":"doc"}'
+              required:
+                - file
+      responses:
+        "200":
+          description: Parsed but not saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleData'
+        "201":
+          description: Saved (and possibly embedded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved_id:
+                    type: integer
+                  embedded:
+                    type: boolean
+                  article_data:
+                    $ref: '#/components/schemas/ArticleData'
+  /scraper/scrape:
+    post:
+      summary: Scrape a URL, optionally save and embed
+      description: >
+        Scrape an URL and return parsed content. To persist the parsed document set `save: true`
+        (when saving the request must include the API key either as header X-API-KEY or query param `api_key`).
+        Embedding requires a full EmbedPayload object and only works for saved documents (or provide existing main_id).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: URL to scrape
+                report_type:
+                  type: string
+                  description: Optional report type hint (AILA/DRA)
+                country:
+                  type: string
+                title:
+                  type: string
+                  description: Optional title to override parsed title
+                save:
+                  type: boolean
+                  default: false
+                  description: When true, save parsed document (requires API key)
+                embed:
+                  $ref: '#/components/schemas/EmbedPayload'
+              required:
+                - url
+      responses:
+        "200":
+          description: Parsed (and possibly saved/embedded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  parsed_success:
+                    type: boolean
+                  article_data:
+                    $ref: '#/components/schemas/ArticleData'
+                  saved_id:
+                    type: integer
+                    nullable: true
+                  embedded:
+                    type: boolean
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+  schemas:
+    EmbedPayload:
+      type: object
+      description: Parameters required by the embedding service. This object must be provided by the client.
+      properties:
+        token:
+          type: string
+          description: SDG Commons API token for embedding service
+        prefix:
+          type: string
+          description: Prefix used for main_id creation (defaults to "doc")
+      required:
+        - token
+        - prefix
+    ArticleData:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        content_length:
+          type: integer
+        content_source:
+          type: string
+        url:
+          type: string
+        country:
+          type: string
+        report_type:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string

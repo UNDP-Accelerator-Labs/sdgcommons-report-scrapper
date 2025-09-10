@@ -25,6 +25,8 @@ import pycountry
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 import time as time_module
+import glob
+import stat
 
 # Set seed for consistent language detection
 DetectorFactory.seed = 0
@@ -51,8 +53,8 @@ def get_db_connection():
     return conn
 
 REPORT_URLS = [
-    "https://www.undp.org/digital/aila",
-    "https://www.undp.org/digital/dra"
+    # "https://www.undp.org/digital/aila", //Uncomment when site is ready to be scraped
+    # "https://www.undp.org/digital/dra"
 ]
 
 # Initialize geocoder
@@ -76,26 +78,73 @@ wait = None
 download_dir = None
 
 def setup_selenium():
-    """Setup Selenium driver"""
+    """Create and set global Selenium Chrome webdriver with a reliable chromedriver path."""
     global driver, wait, download_dir
-    
-    if driver is None:
-        # Add download preferences
-        download_dir = tempfile.mkdtemp(prefix="pdf_downloads_")
-        logger.info(f"Created download directory: {download_dir}")
 
-        prefs = {
-            "plugins.always_open_pdf_externally": True,
-            "download.default_directory": download_dir,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
+    # prepare download dir early so it can be applied to chrome prefs
+    download_dir = tempfile.mkdtemp(prefix="sdg_scraper_dl_")
 
-        driver_service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=driver_service, options=chrome_options)
-        wait = WebDriverWait(driver, 20)
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1280,1024")
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
+
+    prefs = {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "plugins.always_open_pdf_externally": True
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    # Install via webdriver-manager
+    driver_path = ChromeDriverManager().install()
+
+    # If install returned a directory or non-executable file, try to find the real binary
+    if os.path.isdir(driver_path):
+        candidates = glob.glob(os.path.join(driver_path, "**", "chromedriver*"), recursive=True)
+    else:
+        parent = os.path.dirname(driver_path)
+        candidates = glob.glob(os.path.join(parent, "chromedriver*"))
+        candidates += glob.glob(os.path.join(parent, "**", "chromedriver*"), recursive=True)
+
+    candidates = sorted(set(candidates))
+
+    selected = None
+    for c in candidates:
+        bn = os.path.basename(c).lower()
+        if bn.startswith("third_party_notices"):
+            continue
+        if os.path.isfile(c):
+            try:
+                st = os.stat(c)
+                if not (st.st_mode & stat.S_IXUSR):
+                    os.chmod(c, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            except Exception:
+                pass
+            if os.access(c, os.X_OK):
+                selected = c
+                break
+
+    if selected is None and os.path.isfile(driver_path) and os.access(driver_path, os.X_OK):
+        selected = driver_path
+
+    if selected is None:
+        raise RuntimeError(
+            "Could not locate an executable chromedriver binary from webdriver-manager output. "
+            "Try clearing webdriver-manager cache: rm -rf ~/.wdm/drivers/chromedriver"
+        )
+
+    service = Service(selected)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    wait = WebDriverWait(driver, 20)
+
+    logger.info(f"Selenium started using chromedriver: {selected} (download_dir={download_dir})")
+    return driver
 
 def cleanup_selenium():
     """Cleanup Selenium driver and temp files"""

@@ -6,7 +6,7 @@ An automated web scraper that extracts UNDP country reports from AILA (Artificia
 
 ### Core Functionality
 
-- **Automated Scraping**: Scheduled to run every Monday at 08:00 UTC
+- **Automated Scraping**: Scheduled to run every Monday at 00:00 UTC
 - **Multi-Source Content**: Extracts from both web pages and PDF documents
 - **Country Detection**: Automatically identifies and geocodes country information
 - **Language Detection**: Determines content language using AI
@@ -20,24 +20,6 @@ An automated web scraper that extracts UNDP country reports from AILA (Artificia
 - **Database Integration**: Full PostgreSQL schema with relationships
 - **Geocoding**: Automatic country coordinates via OpenStreetMap
 - **Production Ready**: Gunicorn WSGI server with proper logging
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   Flask API     │────│   Scheduler  │────│   Selenium      │
-│   (Health/Manual)│    │   (Weekly)   │    │   (Chrome)      │
-└─────────────────┘    └──────────────┘    └─────────────────┘
-         │                       │                    │
-         └───────────────────────┼────────────────────┘
-                                 │
-         ┌─────────────────────┐ │ ┌─────────────────────┐
-         │   PostgreSQL DB     │─┼─│   External APIs     │
-         │   - articles        │ │ │   - Nominatim       │
-         │   - article_content │ │ │   - UNDP Sites      │
-         │   - raw_html        │ │ └─────────────────────┘
-         └─────────────────────┘ │
-```
 
 ## 📋 Prerequisites
 
@@ -102,6 +84,9 @@ GET /health
 
 GET /scraper/status
 # Returns: detailed scraper information
+
+GET /docs
+# OpenAPI documentation
 ```
 
 ### Manual Operations
@@ -168,27 +153,6 @@ raw_html (
 
 ## 🚧 Development
 
-### Project Structure
-
-```
-├── app.py              # Flask application with health checks
-├── main.py             # Core scraping logic
-├── requirements.txt    # Python dependencies
-├── Dockerfile         # Container definition
-├── gunicorn.conf.py   # Production server config
-├── docker-compose.yml # Local development stack
-└── deploy.sh          # Azure deployment script
-```
-
-### Adding New Features
-
-1. **New Scrapers**: Add URLs to `REPORT_URLS` in `main.py`
-2. **Data Fields**: Update database schema and insert functions
-3. **Health Checks**: Extend `/health` endpoint as needed
-4. **Scheduling**: Modify schedule in `scheduler_worker()`
-
-### Testing
-
 ```bash
 # Run manual scrape
 curl -X POST http://localhost:8000/scraper/run
@@ -201,18 +165,6 @@ curl http://localhost:8000/health | jq
 ```
 
 ## 📝 Configuration
-
-### Environment Variables
-
-| Variable      | Description       | Default      |
-| ------------- | ----------------- | ------------ |
-| `DB_HOST`     | PostgreSQL host   | localhost    |
-| `DB_PORT`     | PostgreSQL port   | 5432         |
-| `DB_NAME`     | Database name     | undp_reports |
-| `DB_USER`     | Database username | -            |
-| `DB_PASSWORD` | Database password | -            |
-| `ENVIRONMENT` | App environment   | development  |
-| `PORT`        | Web server port   | 8000         |
 
 ### Schedule Configuration
 
@@ -241,14 +193,6 @@ schedule.every().monday.at("00:00").do(run_scheduled_scraper)
 - **Chrome**: Headless browser
 - **PostgreSQL**: Database storage
 - **Azure Web Apps**: Cloud hosting
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
 
 ## 📄 License
 

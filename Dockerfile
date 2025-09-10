@@ -67,6 +67,10 @@ RUN apt-get update && apt-get install -y \
 # Point Selenium to the Chromium binary
 ENV CHROME_BIN=/usr/bin/chromium
 
+# Ensure app port is set and a writable temp dir exists (created at build time)
+ENV PORT=8000
+RUN mkdir -p /temp && chmod 1777 /temp
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -88,12 +92,12 @@ RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
 USER app
 
-# Expose port
-EXPOSE 8000
+# Expose port (matches PORT env)
+EXPOSE ${PORT}
 
-# Health check
+# Health check uses the PORT env
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Start the application with gunicorn
 CMD ["sh", "-c", "Xvfb :99 -ac -screen 0 1280x1024x16 & exec gunicorn --config gunicorn.conf.py app:app"]

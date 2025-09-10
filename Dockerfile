@@ -1,15 +1,17 @@
-FROM python:3.11-slim
+FROM python:3.11-slim 
 
-# Install system dependencies
+# Install system dependencies (curated list to avoid unavailable packages)
 RUN apt-get update && apt-get install -y \
     wget \
-    gnupg \
+    gnupg2 \
+    ca-certificates \
     unzip \
     curl \
     xvfb \
+    fonts-liberation \
+    libappindicator3-1 \
     libglib2.0-0 \
     libnss3 \
-    libgconf-2-4 \
     libxss1 \
     libxtst6 \
     libgtk-3-0 \
@@ -25,9 +27,8 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpangocairo-1.0-0 \
     libatk1.0-0 \
-    libcairo-gobject2 \
-    libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-xlib-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome

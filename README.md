@@ -95,8 +95,6 @@ GET /docs
 POST /scraper/run
 # Manually trigger scraping job
 
-GET /
-# API information and available endpoints
 ```
 
 ### Example Health Response
@@ -156,9 +154,6 @@ raw_html (
 ```bash
 # Run manual scrape
 curl -X POST http://localhost:8000/scraper/run
-
-# Check specific country extraction
-python -c "from main import scrape_reports; scrape_reports()"
 
 # Test health endpoint
 curl http://localhost:8000/health | jq

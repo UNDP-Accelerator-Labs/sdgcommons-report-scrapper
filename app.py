@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response, send_from_directory
+from flask import Flask, jsonify, request, Response, send_from_directory, redirect
 from flask_swagger_ui import get_swaggerui_blueprint
 import threading
 import schedule
@@ -433,20 +433,7 @@ def serve_openapi_yaml():
 @app.route('/', methods=['GET'])
 def root():
     """Root endpoint"""
-    return jsonify({
-        "message": "SDG Commons Reports Scraper API",
-        "version": "1.0.0",
-        "server": "gunicorn" if __name__ != "__main__" else "flask-dev",
-        "environment": os.getenv("ENVIRONMENT", "development"),
-        "endpoints": {
-            "health": "/health",
-            "scraper_status": "/scraper/status",
-            "manual_run": "/scraper/run (POST)",
-            "upload": "/scraper/upload (POST)",
-            "scrape": "/scraper/scrape (POST)",
-            "openapi": "/openapi.json"
-        }
-    })
+    return redirect('/docs')
 
 # Initialize scheduler when app starts (not just in __main__)
 def init_scheduler():

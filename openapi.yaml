@@ -7,12 +7,6 @@ info:
 servers:
   - url: http://localhost:8080
 paths:
-  /:
-    get:
-      summary: Root
-      responses:
-        "200":
-          description: API info
   /health:
     get:
       summary: Health check

@@ -132,9 +132,13 @@ def scraper_status():
 
 @app.route('/scraper/run', methods=['POST'])
 def manual_scraper_run():
-    """Manually trigger scraper (for testing)"""
+    """Manually trigger scraper - require API key"""
     if is_scraping:
         return jsonify({"error": "Scraper is already running"}), 409
+    
+    ok, err = _require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
     
     # Run scraper in background thread
     thread = threading.Thread(target=run_scheduled_scraper)

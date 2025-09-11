@@ -4,6 +4,17 @@ info:
   version: "1.0.0"
   description: >
     API for scraping UNDP reports, uploading files, saving to DB and embedding documents.
+    The scraper runs automatically every Monday at 00:00 UTC. Each run checks the following
+    websites for new reports and will add any newly discovered reports to the SDG Commons:
+      - https://www.undp.org/digital/dra
+      - https://www.undp.org/digital/aila
+
+    In addition to the scheduled scraper, the API supports manual workflows:
+      - Upload a report file (PDF, DOCX, HTML, or plain text) to parse it and optionally save
+        and/or embed it into the SDG Commons.
+      - Provide a report URL to have the service scrape, parse, and optionally save/embed the report
+        into the SDG Commons.
+
 servers:
   - url: /
 paths:

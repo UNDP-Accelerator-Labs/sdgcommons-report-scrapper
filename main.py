@@ -53,8 +53,8 @@ def get_db_connection():
     return conn
 
 REPORT_URLS = [
-    # "https://www.undp.org/digital/aila", //Uncomment when site is ready to be scraped
-    # "https://www.undp.org/digital/dra"
+    "https://www.undp.org/digital/aila",
+    "https://www.undp.org/digital/dra"
 ]
 
 # Initialize geocoder
@@ -678,7 +678,7 @@ def scrape_reports():
 
             logger.info(f"Found {len(unique_reports)} country report links on {base_url}")
 
-            report_type = "AILA" if "aila" in base_url else "DRA"
+            report_type = "AILA" if "/aila" in base_url else "DRA" if "/dra" in base_url else "publication"
 
             for i, (report_url, country) in enumerate(unique_reports.items(), 1):
                 try:
@@ -692,9 +692,29 @@ def scrape_reports():
                     if article_data and article_data.get("success"):
                         article_id = insert_article_to_db(conn, article_data, raw_html)
                         article_data["database_id"] = article_id
-                        
+
+                        # optional: embed into NLP service if configured
+                        try:
+                            embed_url = os.getenv("NLP_API_URL")
+                            write_token = os.getenv("NLP_WRITE_TOKEN")
+                            token = os.getenv("API_TOKEN")
+                            embedding_db = os.getenv("EMBEDDING_DB")
+                            if embed_url and write_token and embedding_db and token:
+                                embed_body = {
+                                    "token": token,
+                                    "write_access": write_token,
+                                    "db": embedding_db,
+                                    "main_id": f"blog:{article_id}"
+                                }
+                                r = requests.post(f"{embed_url.rstrip('/')}/api/embed/add", json=embed_body, timeout=30)
+                                if r.ok:
+                                    logger.info(f"Embedded article {article_id}")
+                                else:
+                                    logger.warning(f"Embedding failed for {article_id}: {r.status_code} {r.text}")
+                        except Exception as e:
+                            logger.exception(f"Embedding error for {article_id}: {e}")
+
                         all_extracted_data.append(article_data)
-                        logger.info(f"✓ Extracted and saved: {article_data['title'][:50]}... ({article_data['content_length']} chars, {country})")
                     else:
                         logger.warning(f"✗ No data extracted from {report_url}")
                         if article_data:

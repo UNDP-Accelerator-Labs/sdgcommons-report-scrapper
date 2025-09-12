@@ -144,7 +144,7 @@ def manual_scraper_run():
     thread = threading.Thread(target=run_scheduled_scraper)
     thread.daemon = True
     thread.start()
-    
+
     return jsonify({"message": "Scraper started manually"}), 202
 
 @app.route('/scraper/upload', methods=['POST'])
@@ -153,10 +153,11 @@ def upload_and_save():
     Upload a file (PDF, HTML, DOCX, or text) and optionally save/embed.
     multipart/form-data fields:
       - file: required
+      - url: required (used as source URL)
       - report_type: optional string (default "UPLOAD")
       - country: optional string (default "Unknown")
       - save: optional "true"/"false" (default "true")
-      - embed: optional JSON string/object with { token, write_access, db, prefix, api_url }
+      - embed: optional JSON string/object with { token, write_access,  }
     """
     # API key check (only required for saving)
     # Note: we still permit upload+parse without API key when save=false
@@ -173,6 +174,10 @@ def upload_and_save():
     file = request.files['file']
     report_type = request.form.get('report_type', 'UPLOAD')
     country = request.form.get('country', 'Unknown')
+    url = request.form.get('url', None)
+    if not url:
+        return jsonify({"error": "url is required"}), 400   
+    
     # allow user-supplied title to override generated title
     user_title = request.form.get('title') or None
     # embed handled separately below
@@ -230,13 +235,14 @@ def upload_and_save():
 
     # Prepare article_data compatible with insert_article_to_db
     article_data = {
-        "title": user_title or f"{report_type} - {country} - {filename}",
+        "title": user_title or f"{report_type} - {country}",
         "content": content or "",
         "content_length": len(content or ""),
         "content_source": content_source,
         "url": f"upload://{filename}",
         "country": country,
         "report_type": report_type,
+        "url": url
     }
 
     # Save to DB if requested
@@ -289,15 +295,15 @@ def upload_and_save():
     embedded = False
     if embed_json:
         # embedding requires either saved_id (this request) or embed.main_id supplied
-        if not saved_id and not embed_json.get('main_id'):
-            return jsonify({"error": "Embedding requested but document was not saved. Provide save=true and valid API key or include embed.main_id"}), 400
+        if not saved_id :
+            return jsonify({"error": "Embedding requested but document was not saved. Provide save=true and valid API key"}), 400
 
         try:
             embed_body = {
                 "token": embed_json.get('token'),
                 "write_access": os.getenv("NLP_WRITE_TOKEN"),
                 "db": os.getenv("EMBEDDING_DB"),
-                "main_id": f"{embed_json.get('prefix','doc')}:{saved_id}",
+                "main_id": f"blog:{saved_id}",
             }
             embed_url = os.getenv("NLP_API_URL") 
             resp = http_requests.post(
@@ -391,7 +397,7 @@ def api_scrape_and_save():
                 "token": embed_json.get('token'),
                 "write_access": os.getenv("NLP_WRITE_TOKEN"),
                 "db": os.getenv("EMBEDDING_DB"),
-                "main_id": f"{embed_json.get('prefix','doc')}:{saved_id}",
+                "main_id": f"blog:{saved_id}",
             }
             embed_url = os.getenv("NLP_API_URL")
             resp = http_requests.post(

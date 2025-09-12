@@ -17,6 +17,8 @@ info:
 
 servers:
   - url: /
+security:
+  - ApiKeyAuth: []
 paths:
   /health:
     get:
@@ -52,6 +54,11 @@ paths:
             schema:
               type: object
               properties:
+                url:
+                  type: string
+                  description: URL of the document being uploaded (for record-keeping)
+                  required: true
+                  example: "https://example.com"
                 file:
                   type: string
                   format: binary
@@ -167,12 +174,8 @@ components:
         token:
           type: string
           description: SDG Commons API token for embedding service
-        prefix:
-          type: string
-          description: Prefix used for main_id creation (defaults to "doc")
       required:
         - token
-        - prefix
     ArticleData:
       type: object
       properties:

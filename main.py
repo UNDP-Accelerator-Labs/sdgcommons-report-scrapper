@@ -472,7 +472,8 @@ def parse_country_report(url, report_type, country):
             content, content_source = extract_pdf_directly(url)
             
             if content:
-                pdf_filename = os.path.basename(url.split('?')[0])
+                raw_name = (url or "").split('?')[0]
+                pdf_filename = os.path.basename(raw_name) if raw_name else "unknown.pdf"
                 title = f"{report_type} Report - {country}"
                 
                 iso3, lat, lng = get_country_info(country)

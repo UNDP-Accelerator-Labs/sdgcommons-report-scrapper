@@ -332,16 +332,15 @@ def insert_article_to_db(conn, article_data, raw_html):
             ))
             
             # Insert raw HTML
-            if raw_html:
-                cur.execute("""
-                    INSERT INTO raw_html (article_id, raw_html, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s)
-                """, (
-                    article_id,
-                    raw_html,
-                    current_timestamp,
-                    current_timestamp
-                ))
+            cur.execute("""
+                INSERT INTO raw_html (article_id, raw_html, created_at, updated_at)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                article_id,
+                raw_html if raw_html is not None else article_data.get("content"),
+                current_timestamp,
+                current_timestamp
+            ))
             
             conn.commit()
             logger.info(f"Successfully inserted article ID {article_id}: {article_data['title'][:50]}...")

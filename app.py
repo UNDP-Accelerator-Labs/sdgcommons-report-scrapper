@@ -17,6 +17,7 @@ except Exception:
     DocxDocument = None
 import json
 import shutil
+import traceback
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -107,8 +108,10 @@ def run_scheduled_scraper():
         
     except Exception as e:
         last_scrape_time = datetime.now(timezone.utc)
-        last_scrape_status = f"Failed - {str(e)}"
-        logger.error(f"Scraping failed: {e}")
+        tb = traceback.format_exc()
+        logger.error(f"Scraping failed: {e}\n{tb}")
+        # Save short message + first 1000 chars of traceback so status file isn't huge
+        last_scrape_status = f"Failed - {str(e)} | {tb.splitlines()[-1][:500]}"
         _save_scraper_status(last_scrape_time, last_scrape_status, False)
     finally:
         is_scraping = False

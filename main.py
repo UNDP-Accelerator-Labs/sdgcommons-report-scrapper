@@ -70,7 +70,7 @@ chrome_options.add_argument('--disable-gpu')
 chrome_options.add_argument('--no-sandbox')
 chrome_options.add_argument('--disable-dev-shm-usage')
 chrome_options.add_argument('window-size=1920,1080')
-chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
+chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0 Safari/537.36')
 
 # Global variables for driver management
 driver = None
@@ -500,6 +500,18 @@ def extract_pdf_directly(pdf_url):
         logger.error(f"Error in direct PDF extraction: {e}")
         return None, "PDF_DIRECT_ERROR"
 
+def get_filename_from_url(url, default="unknown.pdf"):
+    """Return a safe basename for a URL (guards against None)."""
+    try:
+        if not url:
+            return default
+        # split only once to avoid excessive splitting
+        raw = (url or "").split('?', 1)[0]
+        name = os.path.basename(raw)
+        return name if name else default
+    except Exception:
+        return default
+
 def parse_country_report(url, report_type, country):
     """Parse a country report page and return article data and metadata"""
     try:
@@ -511,8 +523,7 @@ def parse_country_report(url, report_type, country):
             content, content_source = extract_pdf_directly(url)
             
             if content:
-                raw_name = (url or "").split('?')[0]
-                pdf_filename = os.path.basename(raw_name) if raw_name else "unknown.pdf"
+                pdf_filename = get_filename_from_url(url)
                 title = f"{report_type} Report - {country}"
                 
                 iso3, lat, lng = get_country_info(country)

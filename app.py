@@ -110,8 +110,19 @@ def run_scheduled_scraper():
         last_scrape_time = datetime.now(timezone.utc)
         tb = traceback.format_exc()
         logger.error(f"Scraping failed: {e}\n{tb}")
-        # Save short message + first 1000 chars of traceback so status file isn't huge
-        last_scrape_status = f"Failed - {str(e)} | {tb.splitlines()[-1][:500]}"
+        try:
+            # get last traceback frame for file:line info
+            import traceback as _tbmod, sys as _sys
+            tb_list = _tbmod.extract_tb(_sys.exc_info()[2])
+            if tb_list:
+                last_frame = tb_list[-1]
+                frame_info = f"{last_frame.filename}:{last_frame.lineno} in {last_frame.name}"
+            else:
+                frame_info = "no-traceback-frame"
+        except Exception:
+            frame_info = "traceback-extract-failed"
+        # Save concise status with frame info and exception message
+        last_scrape_status = f"Failed - {str(e)} | at {frame_info}"
         _save_scraper_status(last_scrape_time, last_scrape_status, False)
     finally:
         is_scraping = False

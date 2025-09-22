@@ -500,13 +500,22 @@ def extract_pdf_directly(pdf_url):
         logger.error(f"Error in direct PDF extraction: {e}")
         return None, "PDF_DIRECT_ERROR"
 
+def safe_split(s, sep=None, maxsplit=-1):
+    """Return list from s.split(...) but return [] if s is None."""
+    if s is None:
+        return []
+    try:
+        return s.split(sep, maxsplit)
+    except Exception:
+        return []
+
 def get_filename_from_url(url, default="unknown.pdf"):
     """Return a safe basename for a URL (guards against None)."""
     try:
         if not url:
             return default
-        # split only once to avoid excessive splitting
-        raw = (url or "").split('?', 1)[0]
+        # use safe_split to avoid None errors
+        raw = safe_split(url, '?', 1)[0] if safe_split(url, '?', 1) else url
         name = os.path.basename(raw)
         return name if name else default
     except Exception:

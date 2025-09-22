@@ -102,7 +102,22 @@ def setup_selenium():
     chrome_options.add_experimental_option("prefs", prefs)
 
     # Install via webdriver-manager
-    driver_path = ChromeDriverManager().install()
+    try:
+        driver_path = ChromeDriverManager().install()
+    except Exception as e:
+        logger.warning(f"webdriver-manager failed to download chromedriver: {e}")
+        # Fallbacks: env var, PATH, common system locations
+        driver_path = os.getenv("CHROMEDRIVER_PATH") or shutil.which("chromedriver")
+        common_paths = ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver", "/opt/chromedriver"]
+        for p in common_paths:
+            if not driver_path and os.path.exists(p) and os.access(p, os.X_OK):
+                driver_path = p
+                break
+        if not driver_path:
+            raise RuntimeError(
+                "Could not obtain chromedriver via webdriver-manager and no fallback chromedriver found. "
+                "Set CHROMEDRIVER_PATH env var or install chromedriver on the system."
+            ) from e
 
     # If install returned a directory or non-executable file, try to find the real binary
     if os.path.isdir(driver_path):

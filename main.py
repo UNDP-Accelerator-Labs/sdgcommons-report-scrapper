@@ -262,6 +262,15 @@ def article_exists(conn, url):
         cur.execute("SELECT 1 FROM articles WHERE url = %s", (url,))
         return cur.fetchone() is not None
 
+def get_existing_article(conn, url):
+    """Return existing article id and article_type for a url, or None"""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, article_type FROM articles WHERE url = %s", (url,))
+        row = cur.fetchone()
+        if row:
+            return {"id": row[0], "article_type": row[1]}
+        return None
+
 def insert_article_to_db(conn, article_data, raw_html):
     """Insert article into database including country name"""
     try:
@@ -350,6 +359,36 @@ def insert_article_to_db(conn, article_data, raw_html):
         logger.error(f"Failed to insert article into database: {e}")
         conn.rollback()
         raise
+
+def call_embedding_service(article_id):
+    """Call configured NLP embedding service to embed an article by DB id.
+       Returns True on success, False otherwise."""
+    embed_url = os.getenv("NLP_API_URL")
+    write_token = os.getenv("NLP_WRITE_TOKEN")
+    token = os.getenv("API_TOKEN")
+    embedding_db = os.getenv("EMBEDDING_DB")
+
+    if not all([embed_url, write_token, token, embedding_db]):
+        logger.debug("Embedding service not configured - skipping embedding")
+        return False
+
+    body = {
+        "token": token,
+        "write_access": write_token,
+        "db": embedding_db,
+        "main_id": f"blog:{article_id}"
+    }
+    try:
+        r = requests.post(f"{embed_url.rstrip('/')}/api/embed/add", json=body, timeout=30)
+        if r.ok:
+            logger.info(f"Embedded article {article_id}")
+            return True
+        else:
+            logger.warning(f"Embedding failed for {article_id}: {r.status_code} {r.text}")
+            return False
+    except Exception as e:
+        logger.exception(f"Embedding error for {article_id}: {e}")
+        return False
 
 def extract_country_from_card(card):
     """Extract country name from card HTML"""
@@ -682,8 +721,27 @@ def scrape_reports():
 
             for i, (report_url, country) in enumerate(unique_reports.items(), 1):
                 try:
-                    if article_exists(conn, report_url):
-                        logger.info(f"Article already exists in DB, skipping: {report_url}")
+                    existing = get_existing_article(conn, report_url)
+                    if existing:
+                        # If stored article_type differs from current report type, update and re-run embedding
+                        if (existing.get("article_type") or "").upper() != (report_type or "").upper():
+                            logger.info(f"Updating article {existing['id']} type from {existing.get('article_type')} to {report_type}")
+                            try:
+                                with conn.cursor() as cur:
+                                    # add report_type to tags if tags column is an array (guarded update)
+                                    cur.execute("""
+                                        UPDATE articles
+                                        SET article_type = %s, updated_at = %s
+                                        WHERE id = %s
+                                    """, (report_type, datetime.now(), existing["id"]))
+                                conn.commit()
+                                # call NLP embed API for this existing article id
+                                call_embedding_service(existing["id"])
+                            except Exception as e:
+                                conn.rollback()
+                                logger.error(f"Failed to update article type for {existing['id']}: {e}")
+                        else:
+                            logger.info(f"Article already exists in DB with same type, skipping: {report_url}")
                         continue
 
                     logger.info(f"Processing {i}/{len(unique_reports)}: {country} - {report_url}")
@@ -694,25 +752,7 @@ def scrape_reports():
                         article_data["database_id"] = article_id
 
                         # optional: embed into NLP service if configured
-                        try:
-                            embed_url = os.getenv("NLP_API_URL")
-                            write_token = os.getenv("NLP_WRITE_TOKEN")
-                            token = os.getenv("API_TOKEN")
-                            embedding_db = os.getenv("EMBEDDING_DB")
-                            if embed_url and write_token and embedding_db and token:
-                                embed_body = {
-                                    "token": token,
-                                    "write_access": write_token,
-                                    "db": embedding_db,
-                                    "main_id": f"blog:{article_id}"
-                                }
-                                r = requests.post(f"{embed_url.rstrip('/')}/api/embed/add", json=embed_body, timeout=30)
-                                if r.ok:
-                                    logger.info(f"Embedded article {article_id}")
-                                else:
-                                    logger.warning(f"Embedding failed for {article_id}: {r.status_code} {r.text}")
-                        except Exception as e:
-                            logger.exception(f"Embedding error for {article_id}: {e}")
+                        call_embedding_service(article_id)
 
                         all_extracted_data.append(article_data)
                     else:

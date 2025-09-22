@@ -16,6 +16,7 @@ try:
 except Exception:
     DocxDocument = None
 import json
+import shutil
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +29,35 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 last_scrape_time = None
 last_scrape_status = "Never run"
 is_scraping = False
+
+# File used to persist scraper status (shared across processes)
+STATUS_FILE = os.getenv("SCRAPER_STATUS_FILE", "/tmp/sdg_scraper_status.json")
+
+def _load_scraper_status():
+    try:
+        with open(STATUS_FILE, "r") as fh:
+            return json.load(fh)
+    except Exception:
+        return {
+            "last_run": None,
+            "last_status": "Never run",
+            "currently_running": False
+        }
+
+def _save_scraper_status(last_run, last_status, currently_running):
+    data = {
+        "last_run": last_run.isoformat() if last_run else None,
+        "last_status": last_status,
+        "currently_running": bool(currently_running)
+    }
+    tmp = STATUS_FILE + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(data, fh)
+    try:
+        os.replace(tmp, STATUS_FILE)
+    except Exception:
+        # fallback if os.replace not available on some platforms
+        shutil.move(tmp, STATUS_FILE)
 
 # API key env var used to protect endpoints that save to DB
 SAVE_API_KEY = os.getenv("SAVE_API_KEY", "")
@@ -58,9 +88,13 @@ def _require_api_key():
 def run_scheduled_scraper():
     """Run the scraper and update status"""
     global last_scrape_time, last_scrape_status, is_scraping
-    
+
     try:
         is_scraping = True
+        last_scrape_time = datetime.now(timezone.utc)
+        last_scrape_status = "Running"
+        _save_scraper_status(last_scrape_time, last_scrape_status, is_scraping)
+
         logger.info("Starting scheduled scraping job...")
         
         # Run the scraper
@@ -69,11 +103,13 @@ def run_scheduled_scraper():
         last_scrape_time = datetime.now(timezone.utc)
         last_scrape_status = f"Success - {len(results)} reports processed"
         logger.info(f"Scraping completed successfully: {len(results)} reports")
+        _save_scraper_status(last_scrape_time, last_scrape_status, False)
         
     except Exception as e:
         last_scrape_time = datetime.now(timezone.utc)
         last_scrape_status = f"Failed - {str(e)}"
         logger.error(f"Scraping failed: {e}")
+        _save_scraper_status(last_scrape_time, last_scrape_status, False)
     finally:
         is_scraping = False
 
@@ -103,6 +139,8 @@ def health_check():
     except Exception as e:
         db_status = f"unhealthy: {str(e)}"
     
+    scraper_status = _load_scraper_status()
+
     response = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -110,9 +148,9 @@ def health_check():
         "server": "gunicorn" if __name__ != "__main__" else "flask-dev",
         "environment": os.getenv("ENVIRONMENT", "development"),
         "scraper": {
-            "last_run": last_scrape_time.isoformat() if last_scrape_time else None,
-            "last_status": last_scrape_status,
-            "currently_running": is_scraping
+            "last_run": scraper_status.get("last_run"),
+            "last_status": scraper_status.get("last_status"),
+            "currently_running": scraper_status.get("currently_running")
         }
     }
     
@@ -122,10 +160,11 @@ def health_check():
 @app.route('/scraper/status', methods=['GET'])
 def scraper_status():
     """Get detailed scraper status"""
+    s = _load_scraper_status()
     return jsonify({
-        "last_run": last_scrape_time.isoformat() if last_scrape_time else None,
-        "last_status": last_scrape_status,
-        "currently_running": is_scraping,
+        "last_run": s.get("last_run"),
+        "last_status": s.get("last_status"),
+        "currently_running": s.get("currently_running"),
         "next_scheduled_run": "Every Monday at 00:00 UTC",
         "server": "gunicorn" if __name__ != "__main__" else "flask-dev"
     })

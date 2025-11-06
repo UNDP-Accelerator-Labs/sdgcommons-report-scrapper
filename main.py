@@ -716,6 +716,124 @@ def parse_country_report(url, report_type, country):
             "success": False
         }, None
 
+def update_article_content(conn, article_id, new_content, raw_html=None):
+    """Update article content and raw_html for an existing article"""
+    try:
+        with conn.cursor() as cur:
+            current_timestamp = datetime.now()
+            
+            # Update article_content
+            cur.execute("""
+                UPDATE article_content 
+                SET content = %s, updated_at = %s 
+                WHERE article_id = %s
+            """, (new_content, current_timestamp, article_id))
+            
+            # Update raw_html if provided
+            if raw_html is not None:
+                cur.execute("""
+                    UPDATE raw_html 
+                    SET raw_html = %s, updated_at = %s 
+                    WHERE article_id = %s
+                """, (raw_html, current_timestamp, article_id))
+            
+            # Update the articles table's updated_at timestamp
+            cur.execute("""
+                UPDATE articles 
+                SET updated_at = %s 
+                WHERE id = %s
+            """, (current_timestamp, article_id))
+            
+            conn.commit()
+            logger.info(f"Successfully updated content for article ID {article_id}")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Failed to update article content for ID {article_id}: {e}")
+        conn.rollback()
+        raise
+
+def rescrape_high_relevance_articles():
+    """
+    Find all articles with relevance >= 2, re-scrape them to try to get PDF content,
+    and update the database and NLP embeddings if successful.
+    """
+    logger.info("Starting re-scrape of high relevance articles...")
+    
+    # Setup selenium for PDF extraction
+    setup_selenium()
+    
+    conn = get_db_connection()
+    updated_articles = []
+    
+    try:
+        with conn.cursor() as cur:
+            # Find articles with relevance >= 2
+            cur.execute("""
+                SELECT a.id, a.url, a.country, a.article_type, ac.content
+                FROM articles a
+                LEFT JOIN article_content ac ON a.id = ac.article_id
+                WHERE a.relevance >= 2 
+                AND a.article_type IN ('publications')
+                AND a.deleted = FALSE
+                ORDER BY a.id
+            """)
+            
+            articles = cur.fetchall()
+            logger.info(f"Found {len(articles)} articles with relevance >= 2 to re-scrape")
+            
+            for i, (article_id, url, country, article_type, current_content) in enumerate(articles, 1):
+                try:
+                    logger.info(f"Processing {i}/{len(articles)}: Article ID {article_id} - {url}")
+                    
+                    # Check if content is already substantial (likely from PDF)
+                    if current_content and len(current_content.strip()) > 2500:
+                        logger.info(f"Article {article_id} already has substantial content ({len(current_content)} chars), skipping")
+                        continue
+                    
+                    # Re-scrape the article
+                    article_data, raw_html = parse_country_report(url, article_type or "publications", country or "Unknown")
+                    
+                    if article_data and article_data.get("success") and article_data.get("content"):
+                        new_content = article_data["content"]
+                        
+                        # Only update if we got significantly more content
+                        if len(new_content.strip()) > (len(current_content or "").strip() + 500):
+                            logger.info(f"Article {article_id}: New content is significantly longer ({len(new_content)} vs {len(current_content or '')} chars), updating...")
+                            
+                            # Update the database
+                            update_article_content(conn, article_id, new_content, raw_html)
+                            
+                            # Call NLP embedding service
+                            embedding_success = call_embedding_service(article_id)
+                            
+                            updated_articles.append({
+                                "article_id": article_id,
+                                "url": url,
+                                "country": country,
+                                "old_content_length": len(current_content or ""),
+                                "new_content_length": len(new_content),
+                                "content_source": article_data.get("content_source", "unknown"),
+                                "embedded": embedding_success
+                            })
+                            
+                            logger.info(f"✓ Updated article {article_id} with {len(new_content)} characters of content")
+                        else:
+                            logger.info(f"Article {article_id}: New content not significantly longer, skipping update")
+                    else:
+                        logger.warning(f"✗ Failed to extract content from {url} for article {article_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to re-scrape article {article_id} ({url}): {e}")
+                    continue
+                    
+    finally:
+        conn.close()
+        cleanup_selenium()
+        
+    logger.info(f"Re-scraping completed. Updated {len(updated_articles)} articles.")
+    return updated_articles
+
 def scrape_reports():
     """Main scraping function"""
     logger.info("Starting scraping job...")

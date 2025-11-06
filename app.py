@@ -6,7 +6,7 @@ import time
 import logging
 from datetime import datetime, timezone
 import os
-from main import scrape_reports, parse_country_report, insert_article_to_db, get_db_connection, setup_selenium, cleanup_selenium
+from main import scrape_reports, parse_country_report, insert_article_to_db, get_db_connection, setup_selenium, cleanup_selenium, rescrape_high_relevance_articles
 import io
 import requests as http_requests
 from pdfminer.high_level import extract_text
@@ -199,6 +199,71 @@ def manual_scraper_run():
     thread.start()
 
     return jsonify({"message": "Scraper started manually"}), 202
+
+@app.route('/scraper/rescrape-high-relevance', methods=['POST'])
+def rescrape_high_relevance():
+    """
+    Re-scrape all articles with relevance >= 2 to try to extract PDF content.
+    This endpoint requires API key authentication.
+    """
+    # Check if scraper is already running
+    if is_scraping:
+        return jsonify({"error": "Scraper is already running"}), 409
+    
+    # Require API key for this operation
+    ok, err = _require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    # Run the re-scraping operation in a background thread
+    def run_rescrape():
+        global is_scraping, last_scrape_time, last_scrape_status
+        
+        try:
+            is_scraping = True
+            last_scrape_time = datetime.now(timezone.utc)
+            last_scrape_status = "Running high-relevance re-scrape"
+            _save_scraper_status(last_scrape_time, last_scrape_status, is_scraping)
+            
+            logger.info("Starting high-relevance articles re-scrape...")
+            
+            # Run the re-scraper
+            results = rescrape_high_relevance_articles()
+            
+            last_scrape_time = datetime.now(timezone.utc)
+            last_scrape_status = f"High-relevance re-scrape success - {len(results)} articles updated"
+            logger.info(f"High-relevance re-scrape completed: {len(results)} articles updated")
+            _save_scraper_status(last_scrape_time, last_scrape_status, False)
+            
+        except Exception as e:
+            last_scrape_time = datetime.now(timezone.utc)
+            tb = traceback.format_exc()
+            logger.error(f"High-relevance re-scrape failed: {e}\n{tb}")
+            try:
+                # get last traceback frame for file:line info
+                import traceback as _tbmod, sys as _sys
+                tb_list = _tbmod.extract_tb(_sys.exc_info()[2])
+                if tb_list:
+                    last_frame = tb_list[-1]
+                    frame_info = f"{last_frame.filename}:{last_frame.lineno} in {last_frame.name}"
+                else:
+                    frame_info = "no-traceback-frame"
+            except Exception:
+                frame_info = "traceback-extract-failed"
+            # Save concise status with frame info and exception message
+            last_scrape_status = f"High-relevance re-scrape failed - {str(e)} | at {frame_info}"
+            _save_scraper_status(last_scrape_time, last_scrape_status, False)
+        finally:
+            is_scraping = False
+    
+    # Start the background thread
+    thread = threading.Thread(target=run_rescrape, daemon=True)
+    thread.start()
+    
+    return jsonify({
+        "message": "High-relevance articles re-scrape started",
+        "description": "Re-scraping all articles with relevance >= 2 to extract PDF content and update NLP embeddings"
+    }), 202
 
 @app.route('/scraper/upload', methods=['POST'])
 def upload_and_save():

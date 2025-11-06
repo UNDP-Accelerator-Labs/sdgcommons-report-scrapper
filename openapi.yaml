@@ -40,6 +40,38 @@ paths:
       responses:
         "202":
           description: Started
+  /scraper/rescrape-high-relevance:
+    post:
+      summary: Re-scrape high relevance articles for PDF content
+      description: >
+        Re-scrape all articles with relevance >= 2 to try to extract PDF content and update 
+        the database and NLP embeddings. This operation requires API key authentication and 
+        runs in the background. Articles are only updated if significantly more content is 
+        extracted compared to their current content.
+      responses:
+        "202":
+          description: Re-scrape process started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  description:
+                    type: string
+        "401":
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Scraper already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /scraper/upload:
     post:
       summary: Upload a file, parse it and optionally save/embed

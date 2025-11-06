@@ -728,14 +728,20 @@ def update_article_content(conn, article_id, new_content, raw_html=None):
                 SET content = %s, updated_at = %s 
                 WHERE article_id = %s
             """, (new_content, current_timestamp, article_id))
+
+            # Update html_content
+            cur.execute("""
+                UPDATE article_html_content 
+                SET html_content = %s, updated_at = %s 
+                WHERE article_id = %s
+            """, (new_content, current_timestamp, article_id))
             
-            # Update raw_html if provided
-            if raw_html is not None:
-                cur.execute("""
-                    UPDATE raw_html 
-                    SET raw_html = %s, updated_at = %s 
-                    WHERE article_id = %s
-                """, (raw_html, current_timestamp, article_id))
+            # Update raw_html 
+            cur.execute("""
+                UPDATE raw_html 
+                SET raw_html = %s, updated_at = %s 
+                WHERE article_id = %s
+            """, (raw_html or new_content, current_timestamp, article_id))
             
             # Update the articles table's updated_at timestamp
             cur.execute("""
@@ -787,8 +793,9 @@ def rescrape_high_relevance_articles():
                     logger.info(f"Processing {i}/{len(articles)}: Article ID {article_id} - {url}")
                     
                     # Check if content is already substantial (likely from PDF)
-                    if current_content and len(current_content.strip()) > 2500:
-                        logger.info(f"Article {article_id} already has substantial content ({len(current_content)} chars), skipping")
+                    current_content_str = str(current_content or "")
+                    if current_content and len(current_content_str.strip()) > 2500:
+                        logger.info(f"Article {article_id} already has substantial content ({len(current_content_str)} chars), skipping")
                         continue
                     
                     # Re-scrape the article
@@ -798,8 +805,10 @@ def rescrape_high_relevance_articles():
                         new_content = article_data["content"]
                         
                         # Only update if we got significantly more content
-                        if len(new_content.strip()) > (len(current_content or "").strip() + 500):
-                            logger.info(f"Article {article_id}: New content is significantly longer ({len(new_content)} vs {len(current_content or '')} chars), updating...")
+                        current_content_len = len(current_content_str.strip())
+                        new_content_len = len(new_content.strip())
+                        if new_content_len > (current_content_len + 500):
+                            logger.info(f"Article {article_id}: New content is significantly longer ({new_content_len} vs {current_content_len} chars), updating...")
                             
                             # Update the database
                             update_article_content(conn, article_id, new_content, raw_html)
@@ -811,13 +820,13 @@ def rescrape_high_relevance_articles():
                                 "article_id": article_id,
                                 "url": url,
                                 "country": country,
-                                "old_content_length": len(current_content or ""),
-                                "new_content_length": len(new_content),
+                                "old_content_length": current_content_len,
+                                "new_content_length": new_content_len,
                                 "content_source": article_data.get("content_source", "unknown"),
                                 "embedded": embedding_success
                             })
                             
-                            logger.info(f"✓ Updated article {article_id} with {len(new_content)} characters of content")
+                            logger.info(f"✓ Updated article {article_id} with {new_content_len} characters of content")
                         else:
                             logger.info(f"Article {article_id}: New content not significantly longer, skipping update")
                     else:

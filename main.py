@@ -794,7 +794,7 @@ def rescrape_high_relevance_articles():
                     
                     # Check if content is already substantial (likely from PDF)
                     current_content_str = str(current_content or "")
-                    if current_content and len(current_content_str.strip()) > 2500:
+                    if current_content and len(current_content_str.strip()) > 5000:
                         logger.info(f"Article {article_id} already has substantial content ({len(current_content_str)} chars), skipping")
                         continue
                     

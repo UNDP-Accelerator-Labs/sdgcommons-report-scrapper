@@ -4,6 +4,13 @@ from .selenium_driver import setup_selenium, cleanup_selenium, safe_get
 from .pdf_extractor import extract_pdf_content, is_pdf_url, download_and_parse_pdf
 from .web_scraper import parse_country_report, scrape_reports, extract_country_from_card
 from .rescraper import rescrape_high_relevance_articles
+from .country_office_extractor import (
+    extract_country_offices_from_html,
+    filter_country_offices,
+    get_country_offices_only,
+    get_country_office_by_name,
+    print_country_offices_summary
+)
 
 __all__ = [
     'setup_selenium',
@@ -15,5 +22,10 @@ __all__ = [
     'parse_country_report',
     'scrape_reports',
     'extract_country_from_card',
-    'rescrape_high_relevance_articles'
+    'rescrape_high_relevance_articles',
+    'extract_country_offices_from_html',
+    'filter_country_offices',
+    'get_country_offices_only',
+    'get_country_office_by_name',
+    'print_country_offices_summary'
 ]

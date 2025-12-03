@@ -7,12 +7,13 @@ extracting content from PDFs/web pages, and storing in PostgreSQL.
 
 import os
 import logging
-from flask import Flask, send_from_directory, redirect
+from flask import Flask, send_from_directory, redirect, render_template
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 
 # Import modular components
 from src.api import health_bp, scraper_bp, upload_bp
+from src.api.acceleratorlab_routes import acceleratorlab_bp
 from src.scheduler import init_scheduler
 
 # Setup logging
@@ -27,6 +28,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 app.register_blueprint(health_bp)
 app.register_blueprint(scraper_bp)
 app.register_blueprint(upload_bp)
+app.register_blueprint(acceleratorlab_bp)
 
 # Swagger UI configuration
 SWAGGER_URL = "/docs"
@@ -51,6 +53,12 @@ def serve_openapi_yaml():
 def root():
     """Root endpoint redirects to API documentation"""
     return redirect('/docs')
+
+
+@app.route('/dashboard', methods=['GET'])
+def dashboard():
+    """AcceleratorLab scanner dashboard"""
+    return render_template('acceleratorlab_dashboard.html')
 
 
 # Initialize scheduler for production

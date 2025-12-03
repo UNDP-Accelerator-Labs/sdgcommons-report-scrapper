@@ -38,6 +38,10 @@ class Settings:
     # Geocoding configuration
     GEOCODING_USER_AGENT = os.getenv("GEOCODING_USER_AGENT", "undp-reports-scraper-this-pama")
     
+    # Azure Storage (optional - for multi-instance deployments)
+    AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING", None)
+    AZURE_STORAGE_CONTAINER = os.getenv("AZURE_STORAGE_CONTAINER", "acceleratorlab-data")
+    
     # NLP Embedding service (optional)
     NLP_API_URL = os.getenv("NLP_API_URL", None)
     NLP_WRITE_TOKEN = os.getenv("NLP_WRITE_TOKEN", None)
@@ -62,3 +66,8 @@ class Settings:
     def has_nlp_service(cls):
         """Check if NLP embedding service is configured"""
         return all([cls.NLP_API_URL, cls.NLP_WRITE_TOKEN, cls.API_TOKEN, cls.EMBEDDING_DB])
+    
+    @classmethod
+    def has_azure_storage(cls):
+        """Check if Azure Blob Storage is configured"""
+        return cls.AZURE_STORAGE_CONNECTION_STRING is not None

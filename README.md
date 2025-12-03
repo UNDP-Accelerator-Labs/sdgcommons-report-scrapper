@@ -1,194 +1,183 @@
-# SDG Commons Reports Scraper
+# SDG Commons Data Parser
 
-An automated web scraper that extracts UNDP country reports from AILA (Artificial Intelligence Landscape Assessment) and DRA (Digital Readiness Assessment) programs. The application runs as a Flask web service with scheduled scraping, health monitoring, and comprehensive data extraction capabilities.
+A Flask web service for scraping and analyzing UNDP content with two main modules:
 
-## 🚀 Features
+1. **Report Scraper** - Extracts UNDP country reports (AILA/DRA) and stores them in PostgreSQL
+2. **AcceleratorLab Scanner** - Discovers and classifies AcceleratorLab content across UNDP country offices
 
-### Core Functionality
+## Features
 
-- **Automated Scraping**: Scheduled to run every Monday at 00:00 UTC
-- **Multi-Source Content**: Extracts from both web pages and PDF documents
-- **Country Detection**: Automatically identifies and geocodes country information
-- **Language Detection**: Determines content language using AI
-- **Health Monitoring**: Built-in health checks for Azure deployment
-- **Manual Triggers**: On-demand scraping via REST API
+### Report Scraper
+- Automated weekly scraping (Mondays at 00:00 UTC)
+- PDF and web content extraction with fallback strategies
+- Country detection and geocoding
+- Language detection
+- PostgreSQL storage with NLP embedding support
 
-### Technical Capabilities
+### AcceleratorLab Scanner
+- Scans all UNDP country offices for AcceleratorLab content
+- AI-powered classification (high/medium/low confidence)
+- Real-time progress dashboard
+- Resume capability after interruptions
+- Azure Blob Storage support for multi-instance deployments
 
-- **Headless Browser**: Selenium with Chrome for JavaScript-heavy pages
-- **PDF Processing**: Direct PDF extraction with fallback methods
-- **Database Integration**: Full PostgreSQL schema with relationships
-- **Geocoding**: Automatic country coordinates via OpenStreetMap
-- **Production Ready**: Gunicorn WSGI server with proper logging
+## Quick Start
 
-## 📋 Prerequisites
-
-### Required Software
+### 1. Prerequisites
 
 - Python 3.11+
-- Docker & Docker Compose
-- Azure CLI (for deployment)
-- PostgreSQL 11+ (local development)
+- PostgreSQL 11+ (for Report Scraper)
+- Chrome/Chromium (for web scraping)
 
-### Azure Resources
-
-- Azure Web App Service
-- Azure Database for PostgreSQL
-- Azure Container Registry (optional)
-
-## 🛠️ Quick Start
-
-### 1. Clone Repository
+### 2. Installation
 
 ```bash
+# Clone repository
 git clone https://github.com/UNDP-Accelerator-Labs/sdgcommons-report-scrapper.git
 cd sdgcommons-report-scrapper
-```
 
-### 2. Local Development Setup
-
-```bash
 # Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # Install dependencies
-pip install --upgrade pip
 pip install -r requirements.txt
 
 # Setup environment
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your configuration
 ```
 
-### 3. Local Testing
+### 3. Configuration
+
+Edit `.env` file:
 
 ```bash
-# Start with development server
+# Database (required for Report Scraper)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=sdg_commons
+DB_USER=postgres
+DB_PASSWORD=your_password
+
+# API Protection
+SAVE_API_KEY=your_secret_key
+
+# Azure Blob Storage (optional, for AcceleratorLab multi-instance)
+AZURE_STORAGE_CONNECTION_STRING=your_connection_string
+```
+
+### 4. Run
+
+```bash
+# Development mode (port 8080)
 ./run-dev.sh
 
-# OR start with production server locally
+# Production mode (port 8000)
 ./run-prod.sh
-
-# Check health
-curl http://localhost:8000/health
 ```
 
-## 🔧 API Endpoints
+## API Endpoints
 
-### Health Monitoring
+### Report Scraper
 
 ```bash
+# Health check
 GET /health
-# Returns: system status, database health, scraper status
 
+# Get scraper status
 GET /scraper/status
-# Returns: detailed scraper information
 
-GET /docs
-# OpenAPI documentation
-```
-
-### Manual Operations
-
-```bash
+# Trigger manual scrape (requires API key)
 POST /scraper/run
-# Manually trigger scraping job
+Header: X-API-KEY: your_secret_key
 
+# Upload and parse file
+POST /scraper/upload
+
+# Scrape URL
+POST /scraper/scrape
 ```
 
-### Example Health Response
-
-```json
-{
-  "status": "healthy",
-  "timestamp": "2025-08-27T18:16:28Z",
-  "database": "healthy",
-  "server": "gunicorn",
-  "environment": "production",
-  "scraper": {
-    "last_run": "2025-08-26T08:00:15Z",
-    "last_status": "Success - 12 reports processed",
-    "currently_running": false
-  }
-}
-```
-
-## 📊 Database Schema
-
-### Tables Structure
-
-```sql
--- Main articles table
-articles (
-  id, url, language, title, posted_date, article_type,
-  country, lat, lng, iso3, relevance, tags, ...
-)
-
--- Full content storage
-article_content (
-  article_id, content, created_at, updated_at
-)
-
--- Raw HTML for debugging
-raw_html (
-  article_id, raw_html, created_at, updated_at
-)
-```
-
-### Data Flow
-
-1. **Discovery**: Find report cards on UNDP pages
-2. **Extraction**: Extract country, URL, and content
-3. **Processing**: Geocode locations, detect language
-4. **Storage**: Save to database with full relationships
-
-### Performance Monitoring
-
-- Health endpoint shows last run status
-- Database contains processing timestamps
-- Azure Application Insights for detailed metrics
-
-## 🚧 Development
+### AcceleratorLab Scanner
 
 ```bash
-# Run manual scrape
-curl -X POST http://localhost:8000/scraper/run
+# Start country scan
+POST /acceleratorlab/scan/start
 
-# Test health endpoint
-curl http://localhost:8000/health | jq
+# Get scan progress
+GET /acceleratorlab/scan/status
+
+# View results dashboard
+Open: http://localhost:8000/static/acceleratorlab_dashboard.html
+
+# Get country results
+GET /acceleratorlab/country/{country_code}
+
+# List all countries
+GET /acceleratorlab/countries
+
+# Get global summary
+GET /acceleratorlab/summary
+
+# Reset scan data (requires API key)
+POST /acceleratorlab/scan/reset
+
+# Delete country for re-processing (requires API key)
+DELETE /acceleratorlab/country/{country_code}
 ```
 
-## 📝 Configuration
+### API Documentation
 
-### Schedule Configuration
-
-The scraper runs every Monday at 00:00 UTC. To modify:
-
-```python
-# In app.py, modify this line:
-schedule.every().monday.at("00:00").do(run_scheduled_scraper)
+Interactive OpenAPI documentation available at:
+```bash
+GET /docs
 ```
 
-## 📚 Dependencies
+## Storage
 
-### Core Libraries
+### Local Development
+Data is stored in `data/acceleratorlab/` directory by default.
 
-- **Flask**: Web framework and API
-- **Selenium**: Web browser automation
-- **BeautifulSoup**: HTML parsing
-- **psycopg2**: PostgreSQL adapter
-- **pdfminer**: PDF text extraction
-- **geopy**: Geocoding services
-- **langdetect**: Language detection
+### Azure Production
+When deployed to Azure Web Apps, the system automatically detects the environment (via `WEBSITE_INSTANCE_ID`) and uses Azure Blob Storage if configured. This ensures data consistency across multiple instances.
 
-### Production Stack
+## Docker Deployment
 
-- **Gunicorn**: WSGI HTTP server
-- **Chrome**: Headless browser
-- **PostgreSQL**: Database storage
-- **Azure Web Apps**: Cloud hosting
+```bash
+# Build image
+docker build -t sdg-parser .
 
-## 📄 License
+# Run container
+docker run -p 8000:8000 --env-file .env sdg-parser
+```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Architecture
+
+```
+src/
+├── config/          # Configuration management
+├── database/        # PostgreSQL operations
+├── scraper/         # Report scraping logic
+├── acceleratorlab/  # AcceleratorLab scanner module
+├── api/            # Flask REST API routes
+└── utils/          # Shared utilities
+
+app.py              # Main Flask application
+main.py             # Legacy compatibility wrapper
+```
+
+## Key Technologies
+
+- **Flask** - Web framework
+- **Selenium** - Browser automation
+- **BeautifulSoup** - HTML parsing
+- **pdfminer.six** - PDF extraction
+- **psycopg2** - PostgreSQL adapter
+- **azure-storage-blob** - Azure Blob Storage
+- **transformers** - AI classification
+- **Gunicorn** - Production WSGI server
+
+## License
+
+MIT License - see LICENSE file for details.

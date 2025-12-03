@@ -19,9 +19,16 @@ servers:
   - url: /
 security:
   - ApiKeyAuth: []
+tags:
+  - name: Report Scraper
+    description: Endpoints for scraping and processing UNDP reports (AILA/DRA)
+  - name: AcceleratorLab Scanner
+    description: Endpoints for scanning and classifying AcceleratorLab country office content
 paths:
   /health:
     get:
+      tags:
+        - Report Scraper
       summary: Health check
       responses:
         "200":
@@ -30,18 +37,24 @@ paths:
           description: Unhealthy
   /scraper/status:
     get:
+      tags:
+        - Report Scraper
       summary: Scraper status
       responses:
         "200":
           description: Status info
   /scraper/run:
     post:
+      tags:
+        - Report Scraper
       summary: Trigger scheduled scraper (background)
       responses:
         "202":
           description: Started
   /scraper/rescrape-high-relevance:
     post:
+      tags:
+        - Report Scraper
       summary: Re-scrape high relevance articles for PDF content
       description: >
         Re-scrape all articles with relevance >= 2 to try to extract PDF content and update 
@@ -74,6 +87,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /scraper/upload:
     post:
+      tags:
+        - Report Scraper
       summary: Upload a file, parse it and optionally save/embed
       description: >
         Upload a file (PDF, DOCX, HTML or plain text). Set `save=true` to persist the parsed document
@@ -136,6 +151,8 @@ paths:
                     $ref: '#/components/schemas/ArticleData'
   /scraper/scrape:
     post:
+      tags:
+        - Report Scraper
       summary: Scrape a URL, optionally save and embed
       description: >
         Scrape an URL and return parsed content. To persist the parsed document set `save: true`
@@ -192,6 +209,300 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/scan/start:
+    post:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Start AcceleratorLab country scan
+      description: >
+        Initiates a scan of all UNDP country offices to find and classify AcceleratorLab articles.
+        The scan runs asynchronously in the background and can take several hours to complete.
+        Requires API key authentication.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Scan started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Scan already running or other error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/scan/status:
+    get:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Get scan progress and status
+      description: >
+        Returns current scan status including progress, countries processed, and any errors.
+        Polls this endpoint during active scan to track progress in real-time.
+      responses:
+        "200":
+          description: Status information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [idle, running, completed, error]
+                  progress:
+                    type: object
+                    properties:
+                      current:
+                        type: integer
+                      total:
+                        type: integer
+                      percentage:
+                        type: number
+                      countries_completed:
+                        type: integer
+                      countries_remaining:
+                        type: integer
+                  current_country:
+                    type: string
+                    nullable: true
+                  resumed:
+                    type: boolean
+                  last_run:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/scan/reset:
+    post:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Clear all scan data
+      description: >
+        Deletes all processed country data to allow a fresh scan from scratch.
+        WARNING: This is a destructive operation that cannot be undone!
+        Requires API key authentication.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Data cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+  /acceleratorlab/country/{country_code}:
+    get:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Get country classification results
+      description: >
+        Returns detailed classification results for a specific country including all
+        discovered articles with their classifications (high/medium/low confidence AcceleratorLab content).
+      parameters:
+        - name: country_code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ISO3 country code (e.g., "KEN" for Kenya)
+      responses:
+        "200":
+          description: Country data found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryData'
+        "404":
+          description: Country not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Delete country data for re-processing
+      description: >
+        Removes processed data for a specific country, allowing it to be re-scanned
+        in the next scan run. Useful for re-processing countries after classification improvements.
+        Requires API key authentication.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: country_code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ISO3 country code (e.g., "KEN" for Kenya)
+      responses:
+        "200":
+          description: Country data deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+  /acceleratorlab/countries:
+    get:
+      tags:
+        - AcceleratorLab Scanner
+      summary: List all processed countries
+      description: >
+        Returns a list of ISO3 country codes for all countries that have been
+        processed in the scan. Used to track which countries have been completed.
+      responses:
+        "200":
+          description: List of countries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  countries:
+                    type: array
+                    items:
+                      type: string
+                    description: Array of ISO3 country codes
+                  total:
+                    type: integer
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/summary:
+    get:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Get global classification summary
+      description: >
+        Returns aggregated statistics across all processed countries including total
+        articles found, classifications by confidence level, and per-country breakdown.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: If true, recalculate summary from all country files instead of using cache
+      responses:
+        "200":
+          description: Summary statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanSummary'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/health:
+    get:
+      tags:
+        - AcceleratorLab Scanner
+      summary: AcceleratorLab module health check
+      description: Simple health check endpoint for the AcceleratorLab module
+      responses:
+        "200":
+          description: Module is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  module:
+                    type: string
+                  status:
+                    type: string
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -230,3 +541,92 @@ components:
       properties:
         error:
           type: string
+    CountryData:
+      type: object
+      description: Detailed classification results for a specific country
+      properties:
+        country:
+          type: string
+          description: Country name
+        country_code:
+          type: string
+          description: ISO3 country code
+        total_articles:
+          type: integer
+          description: Total number of articles discovered
+        classified_articles:
+          type: object
+          properties:
+            high:
+              type: integer
+              description: Number of high confidence AcceleratorLab articles
+            medium:
+              type: integer
+              description: Number of medium confidence AcceleratorLab articles
+            low:
+              type: integer
+              description: Number of low confidence AcceleratorLab articles
+        articles:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              url:
+                type: string
+              classification:
+                type: string
+                enum: [high, medium, low, not_relevant]
+              confidence:
+                type: number
+                format: float
+              content_length:
+                type: integer
+              date_published:
+                type: string
+                format: date-time
+                nullable: true
+    ScanSummary:
+      type: object
+      description: Aggregated statistics across all processed countries
+      properties:
+        total_countries:
+          type: integer
+          description: Total number of countries processed
+        total_articles:
+          type: integer
+          description: Total articles discovered across all countries
+        total_classified:
+          type: object
+          properties:
+            high:
+              type: integer
+            medium:
+              type: integer
+            low:
+              type: integer
+        by_country:
+          type: array
+          items:
+            type: object
+            properties:
+              country:
+                type: string
+              country_code:
+                type: string
+              total_articles:
+                type: integer
+              classified:
+                type: object
+                properties:
+                  high:
+                    type: integer
+                  medium:
+                    type: integer
+                  low:
+                    type: integer
+        last_updated:
+          type: string
+          format: date-time
+          nullable: true

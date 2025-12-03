@@ -17,3 +17,4 @@ flask-swagger-ui
 Flask-Cors
 python-docx
 python-dotenv
+azure-storage-blob>=12.19.0

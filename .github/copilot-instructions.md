@@ -6,6 +6,7 @@ This is a Flask web service that scrapes UNDP country reports (AILA/DRA) from un
 
 **Modular Architecture:**
 The codebase is organized into focused modules under `src/`:
+
 - `src/config/` - Centralized configuration (`Settings` class with all env vars)
 - `src/database/` - PostgreSQL operations (connection, CRUD for articles)
 - `src/scraper/` - Web scraping (Selenium, PDF extraction, report parsing)
@@ -14,17 +15,21 @@ The codebase is organized into focused modules under `src/`:
 - `src/scheduler.py` - Background task scheduling
 
 **Legacy Files:**
+
 - `app.py` - Main Flask application (now simplified, uses blueprints)
 - `main.py` - Backward compatibility wrapper (imports from src modules)
 - `app_old.py` / `main_old.py` - Original monolithic files (backup)
 
 **Database:**
+
 - PostgreSQL tables: `articles`, `article_content`, `raw_html` (relationships via `article_id`)
 
 ## Critical Patterns
 
 ### 1. Module Imports
+
 Import from `src/` modules, not legacy files:
+
 ```python
 # Recommended
 from src.scraper import setup_selenium, scrape_reports
@@ -37,6 +42,7 @@ from main import scrape_reports
 ```
 
 ### 2. Selenium Driver Lifecycle
+
 **Always** call `setup_selenium()` before scraping and `cleanup_selenium()` after. Located in `src/scraper/selenium_driver.py`:
 
 ```python
@@ -50,7 +56,9 @@ finally:
 ```
 
 ### 3. Database Operations
+
 All database writes use `psycopg2` with explicit transaction control. Operations in `src/database/operations.py`:
+
 ```python
 from src.database import get_db_connection, insert_article_to_db
 
@@ -69,7 +77,9 @@ finally:
 Articles require 3 table inserts: `articles` → `article_content` → `raw_html`. Use `insert_article_to_db()` which handles all three. Article IDs are returned via `RETURNING id`.
 
 ### 4. Content Extraction Hierarchy
+
 PDF extraction in `src/scraper/pdf_extractor.py` and `web_scraper.py` has multiple fallback strategies:
+
 1. **Direct PDF URL**: Detect via `is_pdf_url()`, extract with `pdfminer` via `requests`
 2. **Selenium PDF Download**: If requests fails (403/access denied), use `download_and_parse_pdf()` which triggers browser download
 3. **Web Content**: If no PDF found, extract `<p>` tags from HTML
@@ -79,12 +89,15 @@ Content source is tracked in `content_source` field: `PDF_DIRECT_REQUESTS`, `PDF
 Main entry point: `parse_country_report(url, report_type, country)` in `src/scraper/web_scraper.py`
 
 ### 5. API Key Protection
+
 Endpoints that write to DB (`/scraper/run`, `/scraper/upload`, `/scraper/scrape` with `save=true`) require `SAVE_API_KEY` via:
+
 - Header: `X-API-KEY`
 - Query param: `api_key`
 - JSON body: `api_key`
 
 Check using `require_api_key()` from `src/api/auth.py` which returns `(bool, error_msg)`:
+
 ```python
 from src.api.auth import require_api_key
 
@@ -94,7 +107,9 @@ if not ok:
 ```
 
 ### 6. Scraper Status Persistence
+
 Status is persisted to `/tmp/sdg_scraper_status.json` (configurable via `Settings.SCRAPER_STATUS_FILE`) to share state across gunicorn workers. Functions in `src/scheduler.py`:
+
 ```python
 from src.scheduler import load_scraper_status, save_scraper_status
 
@@ -103,10 +118,13 @@ save_scraper_status(datetime.now(), "Success", False)
 ```
 
 ### 7. Geocoding & Country Detection
+
 `get_country_info()` in `src/utils/geocoding.py` uses `pycountry` for ISO3 codes and `geopy.Nominatim` for coordinates. Results are cached in `geocoding_cache` dict. **Always sleep 1 second after geocoding** to respect OpenStreetMap rate limits.
 
 ### 8. Configuration Access
+
 All configuration in `src/config/settings.py`. Access via `Settings` class:
+
 ```python
 from src.config import Settings
 
@@ -125,6 +143,7 @@ if Settings.has_nlp_service():
 ## Development Workflow
 
 ### Local Setup
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -133,17 +152,21 @@ cp .env.example .env  # Edit database credentials
 ```
 
 ### Running Locally
+
 - **Dev mode** (Flask reloader): `./run-dev.sh` → port 8080
 - **Prod mode** (Gunicorn): `./run-prod.sh` → port 8000
 
 Dev mode uses Flask's built-in server with `--reload`. Prod mode starts Xvfb for headless Chrome and uses Gunicorn with config from `gunicorn.conf.py`.
 
 ### Environment Variables
+
 Required for operation:
+
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: PostgreSQL connection
 - `SAVE_API_KEY`: Protection for write endpoints
 
 Optional (for NLP embedding):
+
 - `NLP_API_URL`, `NLP_WRITE_TOKEN`, `API_TOKEN`, `EMBEDDING_DB`
 
 Set via `.env` (loaded automatically) or export in shell.
@@ -151,6 +174,7 @@ Set via `.env` (loaded automatically) or export in shell.
 ## Testing & Debugging
 
 ### Manual Endpoints
+
 ```bash
 # Health check
 curl http://localhost:8000/health
@@ -168,6 +192,7 @@ curl -X POST http://localhost:8000/scraper/upload \
 ```
 
 ### Common Issues
+
 - **ChromeDriver not found**: Set `CHROMEDRIVER_PATH` env var or install to system PATH. Docker uses `/usr/bin/chromium-driver`.
 - **Geocoding timeouts**: Increase timeout in `geolocator.geocode(timeout=10)` or check network.
 - **PDF extraction fails**: Check logs for "Access denied" → uses Selenium fallback. Verify Chrome is headless.
@@ -176,6 +201,7 @@ curl -X POST http://localhost:8000/scraper/upload \
 ## Docker Deployment
 
 Dockerfile installs Chromium (not Chrome) to support ARM64/multi-arch. Key points:
+
 - Uses `python:3.11-slim` base
 - Installs `chromium` and `chromium-driver` packages
 - Sets `CHROME_BIN=/usr/bin/chromium` for Selenium
@@ -184,6 +210,7 @@ Dockerfile installs Chromium (not Chrome) to support ARM64/multi-arch. Key point
 - Health check hits `/health` endpoint
 
 Build and run:
+
 ```bash
 docker build -t sdg-scraper .
 docker run -p 8000:8000 --env-file .env sdg-scraper
@@ -192,6 +219,7 @@ docker run -p 8000:8000 --env-file .env sdg-scraper
 ## API Design Philosophy
 
 The API separates concerns:
+
 - **Parsing**: Extracts content from URLs/files (no auth needed)
 - **Saving**: Writes to database (requires API key)
 - **Embedding**: Calls external NLP service (optional, requires saved article)
@@ -200,7 +228,7 @@ Example: `/scraper/scrape` with `save=false` returns parsed content without DB w
 
 ## Scheduled Tasks
 
-The scheduler runs in a daemon thread started by `init_scheduler()`. It uses `schedule.every().monday.at("00:00").do(run_scheduled_scraper)`. 
+The scheduler runs in a daemon thread started by `init_scheduler()`. It uses `schedule.every().monday.at("00:00").do(run_scheduled_scraper)`.
 
 **Important**: Gunicorn config sets `workers=1` to avoid duplicate scheduled tasks. If increasing workers, move scheduling to a separate process or use distributed locking.
 
@@ -231,17 +259,21 @@ The scheduler runs in a daemon thread started by `init_scheduler()`. It uses `sc
 ## Adding New Features
 
 **New API Endpoint:**
+
 1. Create route function in appropriate blueprint (`src/api/health.py`, `scraper_routes.py`, or `upload_routes.py`)
 2. Or create new blueprint file and register in `app.py`
 
 **New Scraping Strategy:**
+
 1. Add function to `src/scraper/web_scraper.py` or create new module
 2. Import in `src/scraper/__init__.py`
 
 **New Configuration:**
+
 1. Add to `src/config/settings.py` as class variable
 2. Set in `.env` file
 
 **New Database Operation:**
+
 1. Add function to `src/database/operations.py`
 2. Export in `src/database/__init__.py`

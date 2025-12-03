@@ -22,6 +22,7 @@
 ## 🔍 To Verify
 
 ### 1. Application Startup
+
 ```bash
 cd "/Users/adedapoaderemi/UNDP Projects/sdgcommons-data-parser"
 source .venv/bin/activate
@@ -38,6 +39,7 @@ source .venv/bin/activate
 ```
 
 ### 2. Health Check
+
 ```bash
 # While app is running
 curl http://localhost:8080/health
@@ -45,6 +47,7 @@ curl http://localhost:8080/health
 ```
 
 ### 3. API Documentation
+
 ```bash
 # Open in browser while app is running
 open http://localhost:8080/docs
@@ -52,6 +55,7 @@ open http://localhost:8080/docs
 ```
 
 ### 4. Import Tests
+
 ```python
 # In Python shell with venv activated
 from src.config import Settings
@@ -64,6 +68,7 @@ print("All imports successful!")
 ```
 
 ### 5. Database Connection Test
+
 ```python
 # In Python shell with venv activated and .env configured
 from src.database import get_db_connection
@@ -80,6 +85,7 @@ except Exception as e:
 ```
 
 ### 6. Configuration Test
+
 ```python
 # In Python shell with venv activated
 from src.config import Settings
@@ -94,21 +100,27 @@ print(f"Has NLP Service: {Settings.has_nlp_service()}")
 ## 🐛 Troubleshooting
 
 ### Issue: Import errors "Module not found"
+
 **Solution**: Ensure you're in the project root and venv is activated
+
 ```bash
 cd "/Users/adedapoaderemi/UNDP Projects/sdgcommons-data-parser"
 source .venv/bin/activate
 ```
 
 ### Issue: Database connection fails
+
 **Solution**: Check `.env` file has correct database credentials
+
 ```bash
 cat .env | grep DB_
 # Verify DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD are set
 ```
 
 ### Issue: ChromeDriver not found
+
 **Solution**: Install ChromeDriver or set CHROMEDRIVER_PATH
+
 ```bash
 # Check if chromedriver is available
 which chromedriver
@@ -118,7 +130,9 @@ echo "CHROMEDRIVER_PATH=/path/to/chromedriver" >> .env
 ```
 
 ### Issue: Port already in use
+
 **Solution**: Kill existing process or use different port
+
 ```bash
 # Find process using port 8080
 lsof -ti:8080 | xargs kill -9
@@ -131,12 +145,14 @@ export PORT=8081
 ## 📊 Code Statistics
 
 ### Before Restructuring
+
 - **Files**: 2 large files
 - **Lines**: 1,529 total
 - **Average**: 765 lines per file
 - **Structure**: Monolithic
 
 ### After Restructuring
+
 - **Files**: 21 focused modules
 - **Lines**: 1,879 total
 - **Average**: 90 lines per file
@@ -145,18 +161,21 @@ export PORT=8081
 ## 📝 Next Steps
 
 ### Immediate
+
 1. [ ] Run application and verify startup
 2. [ ] Test health endpoint
 3. [ ] Verify database connection
 4. [ ] Check API documentation loads
 
 ### Short-term
+
 1. [ ] Test scraping functionality
 2. [ ] Test file upload endpoint
 3. [ ] Verify scheduled tasks work
 4. [ ] Monitor logs for any warnings
 
 ### Long-term
+
 1. [ ] Add unit tests for each module
 2. [ ] Add integration tests
 3. [ ] Set up CI/CD pipeline
@@ -167,6 +186,7 @@ export PORT=8081
 ## 📚 Documentation
 
 All documentation is up to date:
+
 - ✅ `ARCHITECTURE.md` - Comprehensive architecture guide
 - ✅ `RESTRUCTURING_SUMMARY.md` - Transformation details
 - ✅ `QUICK_REFERENCE.md` - Common patterns and imports
@@ -176,6 +196,7 @@ All documentation is up to date:
 ## 🎉 Success Criteria
 
 The restructuring is successful if:
+
 - ✅ All modules compile without errors
 - ✅ Application starts without errors
 - ✅ Health endpoint responds correctly
@@ -188,6 +209,7 @@ The restructuring is successful if:
 ## 🔧 Rollback Plan
 
 If issues arise, you can rollback:
+
 ```bash
 # Restore original files
 mv app.py app_new_backup.py
@@ -202,6 +224,7 @@ mv main_old.py main.py
 ## 📧 Support
 
 For questions or issues:
+
 1. Check `ARCHITECTURE.md` for structure details
 2. Review `QUICK_REFERENCE.md` for common patterns
 3. Consult `.github/copilot-instructions.md` for AI assistance

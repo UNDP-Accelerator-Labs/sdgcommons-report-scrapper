@@ -8,6 +8,7 @@ A Flask web service for scraping and analyzing UNDP content with two main module
 ## Features
 
 ### Report Scraper
+
 - Automated weekly scraping (Mondays at 00:00 UTC)
 - PDF and web content extraction with fallback strategies
 - Country detection and geocoding
@@ -15,6 +16,7 @@ A Flask web service for scraping and analyzing UNDP content with two main module
 - PostgreSQL storage with NLP embedding support
 
 ### AcceleratorLab Scanner
+
 - Scans all UNDP country offices for AcceleratorLab content
 - AI-powered classification (high/medium/low confidence)
 - Real-time progress dashboard
@@ -130,6 +132,7 @@ DELETE /acceleratorlab/country/{country_code}
 ### API Documentation
 
 Interactive OpenAPI documentation available at:
+
 ```bash
 GET /docs
 ```
@@ -137,9 +140,11 @@ GET /docs
 ## Storage
 
 ### Local Development
+
 Data is stored in `data/acceleratorlab/` directory by default.
 
 ### Azure Production
+
 When deployed to Azure Web Apps, the system automatically detects the environment (via `WEBSITE_INSTANCE_ID`) and uses Azure Blob Storage if configured. This ensures data consistency across multiple instances.
 
 ## Docker Deployment

@@ -100,6 +100,65 @@ def extract_date_from_article(soup, url):
         return None
 
 
+def extract_date_from_text(text):
+    """
+    Extract dates from article text content using regex patterns.
+    Looks for common date formats in the first 2000 characters of text.
+    
+    Args:
+        text: Article text content
+        
+    Returns:
+        datetime or None: First date found if valid
+    """
+    if not text:
+        return None
+    
+    # Search only in first 2000 chars (where dates typically appear)
+    search_text = text[:2000]
+    
+    # Date patterns to match (prioritize year-month-day formats)
+    patterns = [
+        # ISO format: 2023-01-15, 2023/01/15
+        (r'\b(20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b', '%Y-%m-%d'),
+        # Format: January 15, 2023 or Jan 15, 2023
+        (r'\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[,\s]+(\d{1,2})[,\s]+(20\d{2})\b', None),
+        # Format: 15 January 2023
+        (r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[,\s]+(20\d{2})\b', None),
+        # Format: Published: 2023, Updated: 2023, Copyright 2023
+        (r'\b(Published|Updated|Copyright|©)[\s:,]+(20\d{2})\b', None),
+        # Simple year: just 2023 (last resort)
+        (r'\b(20[12]\d)\b', '%Y'),
+    ]
+    
+    for pattern, fmt in patterns:
+        matches = re.finditer(pattern, search_text, re.IGNORECASE)
+        for match in matches:
+            try:
+                date_str = match.group(0)
+                
+                if fmt:
+                    # Use provided format
+                    if fmt == '%Y-%m-%d':
+                        date_str = date_str.replace('/', '-')
+                    return datetime.strptime(date_str, fmt)
+                else:
+                    # Parse manually for complex patterns
+                    groups = match.groups()
+                    if len(groups) >= 3 and groups[2].startswith('20'):
+                        # Month day, year format
+                        year = int(groups[2])
+                        return datetime(year, 1, 1)  # Return year at least
+                    elif len(groups) >= 2 and groups[-1].startswith('20'):
+                        # Year only from "Published: 2023" etc
+                        year = int(groups[-1])
+                        return datetime(year, 1, 1)
+            except (ValueError, IndexError):
+                continue
+    
+    return None
+
+
 def is_after_2019(date_obj):
     """Check if date is 2019 or later"""
     if not date_obj:
@@ -326,7 +385,7 @@ def analyze_content(soup, url, extract_pdfs=True):
             if title:
                 break
     
-    # Extract publication date
+    # Extract publication date from HTML metadata
     pub_date = extract_date_from_article(soup, url)
     
     # Extract author (UNDP uses author-label divs with h6 tags)
@@ -384,6 +443,12 @@ def analyze_content(soup, url, extract_pdfs=True):
     # Clean up common UI text
     content_text = content_text.replace("Read more", "").replace("View More", "").replace("Load More", "")
     content_text = re.sub(r'\s+', ' ', content_text).strip()
+    
+    # If no date found in HTML metadata, try extracting from text content
+    if not pub_date and content_text:
+        pub_date = extract_date_from_text(content_text)
+        if pub_date:
+            logger.debug(f"Extracted date from text content: {pub_date.year}")
     
     return {
         "title": title or "Untitled",

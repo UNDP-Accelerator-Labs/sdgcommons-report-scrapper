@@ -78,6 +78,9 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                             logger.warning(f"No content extracted from {url}")
                             continue
                         
+                        # Classify article first (to determine if AcceleratorLab content)
+                        classification = classify_article(content_data)
+                        
                         # Check date filter (can only check after visiting article page)
                         if content_data.get("date"):
                             from datetime import datetime as dt
@@ -88,9 +91,13 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                                     continue
                             except:
                                 pass  # Include if date parsing fails
-                        
-                        # Classify article
-                        classification = classify_article(content_data)
+                        else:
+                            # No date found - only include if it's AcceleratorLab content
+                            if classification != "accelerator_lab":
+                                logger.debug(f"Skipping undated non-AcceleratorLab article: {url}")
+                                continue
+                            else:
+                                logger.info(f"Including undated AcceleratorLab article: {url}")
                         
                         # Build result
                         article_data = {
@@ -170,6 +177,9 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                         if not content_data:
                             continue
                         
+                        # Classify first (checks PDF content + HTML content)
+                        classification = classify_article(content_data)
+                        
                         # Date filter (can only check after visiting article page)
                         if content_data.get("date"):
                             from datetime import datetime as dt
@@ -180,9 +190,13 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                                     continue
                             except:
                                 pass  # Include if date parsing fails
-                        
-                        # Classify (checks PDF content + HTML content)
-                        classification = classify_article(content_data)
+                        else:
+                            # No date found - only include if it's AcceleratorLab content
+                            if classification != "accelerator_lab":
+                                logger.debug(f"Skipping undated non-AcceleratorLab publication: {url}")
+                                continue
+                            else:
+                                logger.info(f"Including undated AcceleratorLab publication: {url}")
                         
                         article_data = {
                             "url": url,

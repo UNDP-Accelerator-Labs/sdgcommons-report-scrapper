@@ -372,6 +372,25 @@
           opacity: 0;
         }
       }
+
+      .info-box {
+        margin-top: 15px;
+        padding: 12px 15px;
+        background: #e3f2fd;
+        border-left: 4px solid #2196f3;
+        border-radius: 4px;
+      }
+
+      .info-box p {
+        color: #1565c0;
+        font-size: 13px;
+        margin: 0;
+        line-height: 1.6;
+      }
+
+      .info-box strong {
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
@@ -382,6 +401,16 @@
           Analyze UNDP country office content to identify AcceleratorLab vs
           Country Office publications
         </p>
+        <div class="info-box">
+          <p>
+            <strong>📅 Date Filtering:</strong> Only content from 2019 onwards
+            is analyzed. Dates are extracted from page metadata (HTML tags), or
+            if unavailable, from the article text content itself. Articles with
+            dates before 2019 are excluded. Articles without dates are only
+            included if they contain AcceleratorLab keywords; otherwise, they
+            are excluded to maintain data quality.
+          </p>
+        </div>
       </header>
 
       <div class="controls">
@@ -702,7 +731,7 @@
           document.getElementById("accelCount").textContent =
             data.total_accelerator_lab || 0;
           document.getElementById("countryCount").textContent =
-            data.total_country_office || 0;
+            data.total_countries || 0;
 
           // Update countries table
           const tbody = document.getElementById("countriesBody");

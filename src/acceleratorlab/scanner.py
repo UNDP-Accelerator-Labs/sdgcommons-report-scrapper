@@ -238,11 +238,19 @@ def run_full_scan():
         countries_to_process = []
         skipped_count = 0
         
+        from src.utils.geocoding import get_country_info
+        
         for country in countries:
-            country_slug = country.get("slug", country["name"].lower().replace(" ", "-"))
-            if country_slug in processed_countries:
+            country_name = country["name"]
+            # Get ISO3 code to check if already processed
+            country_iso3, _, _ = get_country_info(country_name)
+            if not country_iso3:
+                country_slug = country.get("slug", country_name.lower().replace(" ", "-"))
+                country_iso3 = country_slug.upper().replace("-", "")[:3]
+            
+            if country_iso3 in processed_countries:
                 skipped_count += 1
-                logger.debug(f"Skipping already processed country: {country['name']}")
+                logger.debug(f"Skipping already processed country: {country_name} ({country_iso3})")
             else:
                 countries_to_process.append(country)
         
@@ -267,13 +275,21 @@ def run_full_scan():
             country_slug = country.get("slug", country_name.lower().replace(" ", "-"))
             country_url = country["url"]
             
+            # Get ISO3 country code for proper storage
+            from src.utils.geocoding import get_country_info
+            country_iso3, _, _ = get_country_info(country_name)
+            if not country_iso3:
+                # Fallback to uppercase slug if ISO3 not found
+                country_iso3 = country_slug.upper().replace("-", "")[:3]
+                logger.warning(f"Could not find ISO3 for {country_name}, using fallback: {country_iso3}")
+            
             current_completed = skipped_count + idx - 1
-            logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name}")
+            logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
             
             # Update status with accurate progress
             save_scan_status("running", {
                 "current_country": country_name,
-                "current_country_code": country_slug,
+                "current_country_code": country_iso3,
                 "countries_completed": current_completed,
                 "total_countries": total_countries,
                 "countries_remaining": len(countries_to_process) - idx,
@@ -291,18 +307,18 @@ def run_full_scan():
                 # Combine results
                 all_articles = blogs + publications
                 
-                # Save country data (even if empty, to mark as processed)
-                save_country_data(country_slug, country_name, all_articles)
+                # Save country data using ISO3 code (even if empty, to mark as processed)
+                save_country_data(country_iso3, country_name, all_articles)
                 if all_articles:
-                    logger.info(f"Saved {len(all_articles)} articles for {country_name}")
+                    logger.info(f"Saved {len(all_articles)} articles for {country_name} ({country_iso3})")
                 else:
-                    logger.warning(f"No articles found for {country_name}")
+                    logger.warning(f"No articles found for {country_name} ({country_iso3})")
                 
             except Exception as e:
                 logger.error(f"Error processing {country_name}: {e}")
-                # Save empty data to mark country as attempted
+                # Save empty data to mark country as attempted (using ISO3 code)
                 try:
-                    save_country_data(country_slug, country_name, [])
+                    save_country_data(country_iso3, country_name, [])
                 except:
                     pass
             

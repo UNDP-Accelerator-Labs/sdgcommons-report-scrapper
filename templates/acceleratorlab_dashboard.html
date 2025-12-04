@@ -293,6 +293,85 @@
         border-radius: 4px;
         margin: 10px 0;
       }
+
+      /* Modal styles */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-content {
+        background-color: white;
+        margin: 15% auto;
+        padding: 30px;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      }
+
+      .modal-header {
+        margin-bottom: 20px;
+      }
+
+      .modal-header h2 {
+        color: #0468b1;
+        margin-bottom: 10px;
+      }
+
+      .modal-body {
+        margin-bottom: 20px;
+      }
+
+      .modal-body input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      .modal-footer button {
+        padding: 10px 20px;
+      }
+
+      .btn-secondary {
+        background: #666;
+      }
+
+      @keyframes slideIn {
+        from {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes slideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+      }
     </style>
   </head>
   <body>
@@ -319,6 +398,32 @@
         >
           Clear API Key
         </button>
+      </div>
+
+      <!-- API Key Modal -->
+      <div id="apiKeyModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>API Key Required</h2>
+            <p style="color: #666; font-size: 14px">
+              Enter your API key to start the scan
+            </p>
+          </div>
+          <div class="modal-body">
+            <input
+              type="password"
+              id="apiKeyInput"
+              placeholder="Enter API key"
+              onkeypress="if(event.key==='Enter') submitApiKey()"
+            />
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeApiKeyModal()">
+              Cancel
+            </button>
+            <button onclick="submitApiKey()">Submit</button>
+          </div>
+        </div>
       </div>
 
       <div class="status" id="statusSection">
@@ -386,18 +491,45 @@
       let refreshInterval = null;
       let apiKey = localStorage.getItem("acceleratorlab_api_key");
 
-      async function startScan() {
-        // Prompt for API key if not stored
-        if (!apiKey) {
-          apiKey = prompt("Enter API key to start scan:");
-          if (!apiKey) {
-            alert("API key is required to start scan");
-            return;
-          }
-          // Save API key to localStorage for future use
-          localStorage.setItem("acceleratorlab_api_key", apiKey);
-        }
+      function showApiKeyModal() {
+        document.getElementById("apiKeyModal").style.display = "block";
+        document.getElementById("apiKeyInput").value = "";
+        document.getElementById("apiKeyInput").focus();
+      }
 
+      function closeApiKeyModal() {
+        document.getElementById("apiKeyModal").style.display = "none";
+        // Re-enable start button if it was disabled
+        const btn = document.getElementById("startBtn");
+        if (btn.textContent === "Starting...") {
+          btn.disabled = false;
+          btn.textContent = "Start New Scan";
+        }
+      }
+
+      function submitApiKey() {
+        const input = document.getElementById("apiKeyInput").value.trim();
+        if (!input) {
+          return;
+        }
+        apiKey = input;
+        localStorage.setItem("acceleratorlab_api_key", apiKey);
+        closeApiKeyModal();
+        // Actually start the scan now
+        executeScan();
+      }
+
+      async function startScan() {
+        // Show modal for API key if not stored
+        if (!apiKey) {
+          showApiKeyModal();
+          return;
+        }
+        // If we have API key, proceed with scan
+        executeScan();
+      }
+
+      async function executeScan() {
         const btn = document.getElementById("startBtn");
         btn.disabled = true;
         btn.textContent = "Starting...";
@@ -413,34 +545,60 @@
           const data = await response.json();
 
           if (response.status === 401) {
-            // Clear invalid API key and prompt again
+            // Clear invalid API key and show modal again
             localStorage.removeItem("acceleratorlab_api_key");
             apiKey = null;
-            alert("Invalid API key. Please try again.");
             btn.disabled = false;
             btn.textContent = "Start New Scan";
+            showNotification("Invalid API key. Please try again.", "error");
+            showApiKeyModal();
             return;
           }
 
           if (data.success) {
-            alert("Scan started successfully!");
+            showNotification("Scan started successfully!", "success");
             startStatusPolling();
           } else {
-            alert("Error: " + data.error);
+            showNotification("Error: " + data.error, "error");
             btn.disabled = false;
             btn.textContent = "Start New Scan";
           }
         } catch (error) {
-          alert("Error starting scan: " + error);
+          showNotification("Error starting scan: " + error, "error");
           btn.disabled = false;
           btn.textContent = "Start New Scan";
         }
       }
 
+      function showNotification(message, type) {
+        // Create notification element
+        const notification = document.createElement("div");
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 15px 20px;
+          border-radius: 4px;
+          color: white;
+          font-weight: 500;
+          z-index: 2000;
+          animation: slideIn 0.3s ease-out;
+          background: ${type === "error" ? "#f44336" : "#4caf50"};
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+          notification.style.animation = "slideOut 0.3s ease-out";
+          setTimeout(() => notification.remove(), 300);
+        }, 3000);
+      }
+
       function clearApiKey() {
         localStorage.removeItem("acceleratorlab_api_key");
         apiKey = null;
-        alert("API key cleared. You will be prompted on next action.");
+        showNotification("API key cleared", "success");
       }
 
       function startStatusPolling() {
@@ -616,8 +774,10 @@
 
       async function loadCountryArticles(countryCode, container) {
         try {
+          // Ensure country code is uppercase for API call
+          const upperCountryCode = countryCode.toUpperCase();
           const response = await fetch(
-            `/acceleratorlab/country/${countryCode}`
+            `/acceleratorlab/country/${upperCountryCode}`
           );
           const data = await response.json();
 

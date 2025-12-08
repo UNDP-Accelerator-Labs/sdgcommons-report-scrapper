@@ -10,9 +10,12 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
+import time
 
 from src.config import Settings
 
@@ -38,7 +41,7 @@ def setup_selenium():
     download_dir = tempfile.mkdtemp(prefix="sdg_scraper_dl_")
 
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
+    # chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -134,9 +137,106 @@ def cleanup_selenium():
             logger.warning(f"Failed to clean up download directory: {e}")
 
 
+def dismiss_modals_and_popups():
+    """
+    Attempt to dismiss common modals, popups, and overlays that block content.
+    Handles login prompts, newsletter subscriptions, cookie consents, etc.
+    """
+    global driver
+    
+    if not driver:
+        return
+    
+    # Common close button selectors
+    close_selectors = [
+        # Generic close buttons
+        "button[aria-label*='close' i]",
+        "button[aria-label*='dismiss' i]",
+        "button[class*='close' i]",
+        "button[class*='dismiss' i]",
+        "[data-testid*='close']",
+        "[data-testid*='dismiss']",
+        ".modal-close",
+        ".popup-close",
+        ".close-button",
+        
+        # Medium specific
+        "button[data-testid='close-button']",
+        "button[aria-label='close']",
+        
+        # Cookie consent
+        "button[id*='accept']",
+        "button[class*='accept']",
+        ".cookie-accept",
+        "#onetrust-accept-btn-handler",
+        
+        # Newsletter/login overlays
+        "button:has-text('No thanks')",
+        "button:has-text('Maybe later')",
+        "button:has-text('Skip')",
+        "[aria-label='Skip']",
+    ]
+    
+    for selector in close_selectors:
+        try:
+            # Use short timeout for each attempt
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            for elem in elements:
+                if elem.is_displayed() and elem.is_enabled():
+                    elem.click()
+                    logger.debug(f"Dismissed modal/popup using selector: {selector}")
+                    time.sleep(0.5)  # Brief pause after dismissal
+                    break
+        except Exception:
+            continue
+    
+    # Try pressing ESC key to close modals
+    try:
+        from selenium.webdriver.common.action_chains import ActionChains
+        actions = ActionChains(driver)
+        actions.send_keys(Keys.ESCAPE).perform()
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+
+def handle_cloudflare_challenge():
+    """
+    Handle Cloudflare challenge pages by waiting for them to complete.
+    Does NOT attempt to bypass security - waits for legitimate challenge completion.
+    """
+    global driver, wait
+    
+    if not driver:
+        return
+    
+    try:
+        # Check if we're on a Cloudflare challenge page
+        page_source = driver.page_source.lower()
+        
+        if "cloudflare" in page_source and ("checking your browser" in page_source or "challenge" in page_source):
+            logger.info("Cloudflare challenge detected, waiting for completion...")
+            
+            # Wait up to 15 seconds for challenge to complete
+            # The challenge usually completes within 5 seconds
+            time.sleep(5)
+            
+            # Check if we're still on challenge page
+            for _ in range(10):
+                current_source = driver.page_source.lower()
+                if "checking your browser" not in current_source:
+                    logger.info("Cloudflare challenge completed")
+                    break
+                time.sleep(1)
+            
+    except Exception as e:
+        logger.debug(f"Error checking for Cloudflare challenge: {e}")
+
+
 def safe_get(url):
     """
     Safely get a URL using Selenium with error handling.
+    Handles modals, popups, and security challenges.
     
     Args:
         url: URL to fetch
@@ -149,7 +249,20 @@ def safe_get(url):
     try:
         logger.info(f"Accessing {url} via Selenium")
         driver.get(url)
+        
+        # Wait for initial page load
         wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "body")))
+        
+        # Handle Cloudflare or similar security challenges
+        handle_cloudflare_challenge()
+        
+        # Wait a bit for JavaScript to load content (especially for Medium)
+        time.sleep(2)
+        
+        # Dismiss any modals/popups that may block content
+        dismiss_modals_and_popups()
+        
+        # Get final page source
         html = driver.page_source
         
         class Response:

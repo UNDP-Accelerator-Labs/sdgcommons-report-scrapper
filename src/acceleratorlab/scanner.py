@@ -401,3 +401,32 @@ def get_scan_status() -> Dict[str, Any]:
         dict: Status information with progress details
     """
     return load_scan_status()
+
+
+def auto_resume_scan_if_needed():
+    """
+    Check if a scan was interrupted and automatically resume it.
+    Called on server startup.
+    """
+    try:
+        status = load_scan_status()
+        
+        # Check if scan was running when server stopped
+        if status.get("status") == "running":
+            logger.info("🔄 Detected interrupted scan - auto-resuming...")
+            
+            # Reset status to idle first (prevents "scan already running" error)
+            save_scan_status("idle", {})
+            
+            # Start the scan (will automatically resume from where it left off)
+            success, message = start_scan_async()
+            
+            if success:
+                logger.info(f"✅ Auto-resume successful: {message}")
+            else:
+                logger.warning(f"⚠️  Auto-resume failed: {message}")
+        else:
+            logger.debug(f"No interrupted scan detected (status: {status.get('status')})")
+            
+    except Exception as e:
+        logger.error(f"Error during auto-resume check: {e}", exc_info=True)

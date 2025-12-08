@@ -255,6 +255,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/scan/continue:
+    post:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Continue/resume interrupted scan
+      description: >
+        Manually resume a scan that was interrupted (e.g., server restart, error, etc.).
+        The scan will automatically skip already-processed countries and continue from where it left off.
+        This endpoint can also be used to restart a completed or errored scan.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Scan resumed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Cannot resume (scan already running)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /acceleratorlab/scan/status:
     get:
       tags:

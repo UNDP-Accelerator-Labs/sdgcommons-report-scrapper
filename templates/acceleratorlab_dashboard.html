@@ -416,6 +416,13 @@
       <div class="controls">
         <button id="startBtn" onclick="startScan()">Start New Scan</button>
         <button
+          id="continueBtn"
+          onclick="continueScan()"
+          style="margin-left: 10px; background: #ff9800"
+        >
+          Continue Scan
+        </button>
+        <button
           onclick="refreshData()"
           style="margin-left: 10px; background: #666"
         >
@@ -599,6 +606,57 @@
         }
       }
 
+      async function continueScan() {
+        // Show modal for API key if not stored
+        if (!apiKey) {
+          showApiKeyModal();
+          return;
+        }
+        // If we have API key, proceed with continue
+        executeContinueScan();
+      }
+
+      async function executeContinueScan() {
+        const btn = document.getElementById("continueBtn");
+        btn.disabled = true;
+        btn.textContent = "Resuming...";
+
+        try {
+          const response = await fetch("/acceleratorlab/scan/continue", {
+            method: "POST",
+            headers: {
+              "X-API-KEY": apiKey,
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.status === 401) {
+            // Clear invalid API key and show modal again
+            localStorage.removeItem("acceleratorlab_api_key");
+            apiKey = null;
+            btn.disabled = false;
+            btn.textContent = "Continue Scan";
+            showNotification("Invalid API key. Please try again.", "error");
+            showApiKeyModal();
+            return;
+          }
+
+          if (data.success) {
+            showNotification("Scan resumed successfully!", "success");
+            startStatusPolling();
+          } else {
+            showNotification("Error: " + data.error, "error");
+            btn.disabled = false;
+            btn.textContent = "Continue Scan";
+          }
+        } catch (error) {
+          showNotification("Error continuing scan: " + error, "error");
+          btn.disabled = false;
+          btn.textContent = "Continue Scan";
+        }
+      }
+
       function showNotification(message, type) {
         // Create notification element
         const notification = document.createElement("div");
@@ -657,13 +715,19 @@
           badge.className = "status-badge status-" + data.status;
           badge.textContent = data.status.toUpperCase();
 
-          // Update start button
-          const btn = document.getElementById("startBtn");
-          btn.disabled = data.status === "running";
-          btn.textContent =
+          // Update start and continue buttons
+          const startBtn = document.getElementById("startBtn");
+          const continueBtn = document.getElementById("continueBtn");
+
+          startBtn.disabled = data.status === "running";
+          startBtn.textContent =
             data.status === "running"
               ? "Scan in Progress..."
               : "Start New Scan";
+
+          continueBtn.disabled = data.status === "running";
+          continueBtn.textContent =
+            data.status === "running" ? "Scan in Progress..." : "Continue Scan";
 
           // Update progress
           if (data.status === "running" && data.progress) {

@@ -80,6 +80,65 @@ def scan_status():
         }), 500
 
 
+@acceleratorlab_bp.route("/scan/continue", methods=["POST"])
+def continue_scan():
+    """
+    Manually continue/resume an interrupted scan.
+    
+    POST /acceleratorlab/scan/continue
+    Requires: API key authentication
+    
+    Returns:
+        JSON response with success status and message
+    """
+    # Check API key
+    ok, err = require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    logger.info("Received request to continue/resume scan")
+    
+    try:
+        from src.acceleratorlab.file_storage import save_scan_status
+        
+        # Get current status
+        status = get_scan_status()
+        current_status = status.get("status")
+        
+        # If already running, return error
+        if current_status == "running":
+            return jsonify({
+                "success": False,
+                "error": "Scan is already running"
+            }), 400
+        
+        # Reset status to idle to allow resume
+        if current_status in ["completed", "error"]:
+            logger.info(f"Resetting status from '{current_status}' to 'idle' for resume")
+            save_scan_status("idle", {})
+        
+        # Start scan (will automatically resume from where it left off)
+        success, message = start_scan_async()
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Scan resumed successfully. {message}"
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": message
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error continuing scan: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @acceleratorlab_bp.route("/country/<country_code>", methods=["GET"])
 def get_country(country_code):
     """

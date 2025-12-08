@@ -11,6 +11,10 @@ from src.config import Settings
 
 logger = logging.getLogger(__name__)
 
+# Reduce Azure SDK logging verbosity
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
+logging.getLogger('azure.storage.blob').setLevel(logging.WARNING)
+
 # Try to import Azure Blob Storage (optional dependency)
 try:
     from azure.storage.blob import BlobServiceClient, ContentSettings

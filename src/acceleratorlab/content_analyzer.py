@@ -24,6 +24,9 @@ def extract_date_from_article(soup, url):
     """
     Extract publication date from article page.
     
+    For publication pages (URLs containing '/publications/'), prioritizes dates from 
+    <h6 class="coh-heading"> elements which contain the actual publication date.
+    
     Args:
         soup: BeautifulSoup object of the article page
         url: Article URL for logging
@@ -31,15 +34,31 @@ def extract_date_from_article(soup, url):
     Returns:
         datetime or None: Publication date if found and parsed
     """
-    # Common date selectors (UNDP-specific added first)
+    date_text = None
+    
+    # PRIORITY 1: For publications, extract date from <h6 class="coh-heading"> elements
+    # These contain the actual publication date (e.g., "October 1, 2014")
+    if '/publications/' in url:
+        h6_elements = soup.find_all("h6", class_="coh-heading")
+        
+        for h6 in h6_elements:
+            text = h6.get_text(strip=True)
+            
+            # Try to parse the text as a date
+            parsed_date = _parse_date_string(text)
+            if parsed_date:
+                logger.debug(f"Found date in h6.coh-heading: {text} -> {parsed_date}")
+                return parsed_date
+        
+        logger.debug(f"No date found in h6.coh-heading elements for publication: {url}")
+    
+    # PRIORITY 2: Common date selectors (HTML metadata)
     date_selectors = [
         {"tag": "time", "attr": "datetime"},
         {"class": ["posted-date", "date", "publish-date", "published", "post-date", "article-date"]},
         {"itemprop": "datePublished"},
         {"property": "article:published_time"}
     ]
-    
-    date_text = None
     
     # Try time tag with datetime attribute first
     time_tag = soup.find("time")
@@ -74,29 +93,65 @@ def extract_date_from_article(soup, url):
                     break
     
     if not date_text:
-        logger.debug(f"No date found for {url}")
+        logger.debug(f"No date found in HTML metadata for {url}")
         return None
     
-    # Parse date
+    # Parse date from metadata
+    parsed_date = _parse_date_string(date_text)
+    if parsed_date:
+        return parsed_date
+    
+    logger.debug(f"Could not parse date from metadata: {date_text}")
+    return None
+
+
+def _parse_date_string(date_text):
+    """
+    Parse a date string into a datetime object.
+    Tries multiple common date formats.
+    
+    Args:
+        date_text: String potentially containing a date
+        
+    Returns:
+        datetime or None: Parsed date if successful
+    """
+    if not date_text:
+        return None
+    
+    date_text = date_text.strip()
+    
     try:
-        # Try ISO format first
-        if "T" in date_text or "-" in date_text:
-            # ISO format: 2023-01-15T10:30:00Z
+        # Try ISO format first (2023-01-15T10:30:00Z or 2023-01-15)
+        if "T" in date_text or (date_text.count("-") == 2 and date_text[0].isdigit()):
             date_text = date_text.split("T")[0]  # Take date part only
             return datetime.strptime(date_text, "%Y-%m-%d")
         
-        # Try other common formats
-        for fmt in ["%B %d, %Y", "%d %B %Y", "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"]:
+        # Try common written date formats
+        formats = [
+            "%B %d, %Y",      # October 1, 2014
+            "%b %d, %Y",      # Oct 1, 2014
+            "%d %B %Y",       # 1 October 2014
+            "%d %b %Y",       # 1 Oct 2014
+            "%B %d %Y",       # October 1 2014 (no comma)
+            "%b %d %Y",       # Oct 1 2014 (no comma)
+            "%d %B, %Y",      # 1 October, 2014
+            "%d %b, %Y",      # 1 Oct, 2014
+            "%Y-%m-%d",       # 2014-10-01
+            "%m/%d/%Y",       # 10/01/2014
+            "%d/%m/%Y",       # 01/10/2014
+        ]
+        
+        for fmt in formats:
             try:
-                return datetime.strptime(date_text.strip(), fmt)
+                return datetime.strptime(date_text, fmt)
             except ValueError:
                 continue
         
-        logger.debug(f"Could not parse date: {date_text}")
         return None
         
     except Exception as e:
-        logger.debug(f"Date parsing error for {url}: {e}")
+        logger.debug(f"Date parsing error: {e} for text: {date_text}")
         return None
 
 
@@ -337,6 +392,81 @@ def analyze_pdf_content(pdf_url, timeout=30, use_selenium=True):
         return ""
 
 
+def extract_date_from_pdf_metadata(pdf_url, timeout=30):
+    """
+    Extract creation/modification date from PDF metadata.
+    This is used as a fallback when h6.coh-heading date is not found.
+    
+    Args:
+        pdf_url: URL of the PDF
+        timeout: Request timeout in seconds
+        
+    Returns:
+        datetime or None: PDF creation/modification date if found
+    """
+    if not PDF_SUPPORT:
+        return None
+    
+    # Make URL absolute if needed
+    if pdf_url.startswith("/"):
+        pdf_url = f"https://www.undp.org{pdf_url}"
+    
+    try:
+        # Import PDFInfo for metadata extraction
+        from pdfminer.pdfparser import PDFParser
+        from pdfminer.pdfdocument import PDFDocument
+        
+        # Download PDF
+        response = requests.get(pdf_url, timeout=timeout, allow_redirects=True, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        response.raise_for_status()
+        
+        # Parse PDF metadata
+        pdf_file = BytesIO(response.content)
+        parser = PDFParser(pdf_file)
+        doc = PDFDocument(parser)
+        
+        # Get metadata
+        metadata = doc.info
+        if not metadata:
+            return None
+        
+        # metadata is a list of dicts, get the first one
+        if isinstance(metadata, list) and len(metadata) > 0:
+            info = metadata[0]
+        else:
+            info = metadata
+        
+        # Try to extract creation date or modification date
+        date_fields = [b'CreationDate', b'ModDate', 'CreationDate', 'ModDate']
+        
+        for field in date_fields:
+            if field in info:
+                date_value = info[field]
+                
+                # PDF dates are in format: D:YYYYMMDDHHmmSS
+                # Example: D:20141001120000Z or b"D:20141001120000Z"
+                if isinstance(date_value, bytes):
+                    date_value = date_value.decode('utf-8', errors='ignore')
+                
+                date_str = str(date_value).strip()
+                
+                # Extract date parts from PDF date format
+                match = re.match(r'D:(\d{4})(\d{2})(\d{2})', date_str)
+                if match:
+                    year, month, day = match.groups()
+                    pdf_date = datetime(int(year), int(month), int(day))
+                    logger.debug(f"Extracted date from PDF metadata: {pdf_date}")
+                    return pdf_date
+        
+        return None
+        
+    except Exception as e:
+        logger.debug(f"Could not extract date from PDF metadata {pdf_url}: {e}")
+        return None
+
+
 def analyze_content(soup, url, extract_pdfs=True):
     """
     Extract full content from article/publication page.
@@ -385,8 +515,20 @@ def analyze_content(soup, url, extract_pdfs=True):
             if title:
                 break
     
-    # Extract publication date from HTML metadata
+    # DATE EXTRACTION PRIORITY (for publications):
+    # 1. h6.coh-heading elements (most accurate for publications)
+    # 2. HTML metadata (time tags, meta tags)
+    # 3. PDF metadata (creation/modification date) - FALLBACK
+    # 4. Text content extraction - LAST RESORT
+    
     pub_date = extract_date_from_article(soup, url)
+    
+    # If no date found and this is a publication, try PDF metadata as fallback
+    if not pub_date and is_publication and pdf_links:
+        logger.debug(f"No date in HTML, trying PDF metadata for publication: {url}")
+        pub_date = extract_date_from_pdf_metadata(pdf_links[0]["url"])
+        if pub_date:
+            logger.info(f"✅ Found date in PDF metadata: {pub_date.year}")
     
     # Extract author (UNDP uses author-label divs with h6 tags)
     author = None
@@ -444,11 +586,12 @@ def analyze_content(soup, url, extract_pdfs=True):
     content_text = content_text.replace("Read more", "").replace("View More", "").replace("Load More", "")
     content_text = re.sub(r'\s+', ' ', content_text).strip()
     
-    # If no date found in HTML metadata, try extracting from text content
+    # LAST RESORT: If still no date found, try extracting from text content
     if not pub_date and content_text:
+        logger.debug(f"No date from HTML or PDF metadata, trying text content extraction for: {url}")
         pub_date = extract_date_from_text(content_text)
         if pub_date:
-            logger.debug(f"Extracted date from text content: {pub_date.year}")
+            logger.info(f"✅ Found date in text content: {pub_date.year}")
     
     return {
         "title": title or "Untitled",

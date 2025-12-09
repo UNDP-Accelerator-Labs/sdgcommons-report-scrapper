@@ -410,17 +410,23 @@
             included if they contain AcceleratorLab keywords; otherwise, they
             are excluded to maintain data quality.
           </p>
+          <p>
+            <strong>🔄 Resume Feature:</strong> If a scan is interrupted (server
+            restart, error, etc.), a "Resume Scan" button will appear. Click it
+            to continue from where the scan stopped. Already-processed countries
+            will be automatically skipped.
+          </p>
         </div>
       </header>
 
       <div class="controls">
         <button id="startBtn" onclick="startScan()">Start New Scan</button>
         <button
-          id="continueBtn"
-          onclick="continueScan()"
-          style="margin-left: 10px; background: #ff9800"
+          id="resumeBtn"
+          onclick="resumeScan()"
+          style="margin-left: 10px; background: #ff9800; display: none"
         >
-          Continue Scan
+          Resume Scan
         </button>
         <button
           onclick="refreshData()"
@@ -606,18 +612,18 @@
         }
       }
 
-      async function continueScan() {
+      async function resumeScan() {
         // Show modal for API key if not stored
         if (!apiKey) {
           showApiKeyModal();
           return;
         }
-        // If we have API key, proceed with continue
-        executeContinueScan();
+        // If we have API key, proceed with resume
+        executeResumeScan();
       }
 
-      async function executeContinueScan() {
-        const btn = document.getElementById("continueBtn");
+      async function executeResumeScan() {
+        const btn = document.getElementById("resumeBtn");
         btn.disabled = true;
         btn.textContent = "Resuming...";
 
@@ -636,7 +642,7 @@
             localStorage.removeItem("acceleratorlab_api_key");
             apiKey = null;
             btn.disabled = false;
-            btn.textContent = "Continue Scan";
+            btn.textContent = "Resume Scan";
             showNotification("Invalid API key. Please try again.", "error");
             showApiKeyModal();
             return;
@@ -648,12 +654,12 @@
           } else {
             showNotification("Error: " + data.error, "error");
             btn.disabled = false;
-            btn.textContent = "Continue Scan";
+            btn.textContent = "Resume Scan";
           }
         } catch (error) {
-          showNotification("Error continuing scan: " + error, "error");
+          showNotification("Error resuming scan: " + error, "error");
           btn.disabled = false;
-          btn.textContent = "Continue Scan";
+          btn.textContent = "Resume Scan";
         }
       }
 
@@ -715,9 +721,9 @@
           badge.className = "status-badge status-" + data.status;
           badge.textContent = data.status.toUpperCase();
 
-          // Update start and continue buttons
+          // Update start and resume buttons
           const startBtn = document.getElementById("startBtn");
-          const continueBtn = document.getElementById("continueBtn");
+          const resumeBtn = document.getElementById("resumeBtn");
 
           startBtn.disabled = data.status === "running";
           startBtn.textContent =
@@ -725,9 +731,16 @@
               ? "Scan in Progress..."
               : "Start New Scan";
 
-          continueBtn.disabled = data.status === "running";
-          continueBtn.textContent =
-            data.status === "running" ? "Scan in Progress..." : "Continue Scan";
+          // Show Resume button only when there's an interrupted scan
+          const hasProgress =
+            data.progress && data.progress.countries_completed > 0;
+          const canResume =
+            (data.status === "idle" || data.status === "error") && hasProgress;
+
+          resumeBtn.style.display = canResume ? "inline-block" : "none";
+          resumeBtn.disabled = data.status === "running";
+          resumeBtn.textContent =
+            data.status === "running" ? "Scan in Progress..." : "Resume Scan";
 
           // Update progress
           if (data.status === "running" && data.progress) {
@@ -795,7 +808,7 @@
           document.getElementById("accelCount").textContent =
             data.total_accelerator_lab || 0;
           document.getElementById("countryCount").textContent =
-            data.total_countries || 0;
+            data.total_country_office || 0;
 
           // Update countries table
           const tbody = document.getElementById("countriesBody");

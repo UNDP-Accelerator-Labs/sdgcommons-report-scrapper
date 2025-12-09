@@ -64,10 +64,6 @@ def dashboard():
 # Initialize scheduler for production
 init_scheduler()
 
-# Auto-resume scan if it was interrupted
-from src.acceleratorlab import auto_resume_scan_if_needed
-auto_resume_scan_if_needed()
-
 if __name__ == '__main__':
     # This only runs in development mode
     logger.warning("Running in DEVELOPMENT mode - do not use in production!")

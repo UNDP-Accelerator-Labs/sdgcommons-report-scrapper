@@ -27,6 +27,18 @@ _scanner_lock = threading.Lock()
 _pause_requested = False
 
 
+class ScanPausedException(Exception):
+    """Exception raised when scan is paused by user"""
+    pass
+
+
+def check_if_paused():
+    """Check if pause was requested and raise exception if so"""
+    global _pause_requested
+    if _pause_requested:
+        raise ScanPausedException("Scan paused by user")
+
+
 def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str) -> List[Dict[str, Any]]:
     """
     Scan all blogs for a country and classify them.
@@ -65,6 +77,9 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                 
                 # Analyze each article
                 for url in article_urls:
+                    # Check if pause was requested
+                    check_if_paused()
+                    
                     try:
                         driver.get(url)
                         time.sleep(1)
@@ -165,6 +180,9 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                 
                 # Analyze each publication (extract PDFs and analyze content)
                 for url in article_urls:
+                    # Check if pause was requested
+                    check_if_paused()
+                    
                     try:
                         driver.get(url)
                         time.sleep(1)
@@ -233,6 +251,9 @@ def run_full_scan():
     Supports resuming from last processed country if scan was interrupted.
     This is the main entry point for the scanning process.
     """
+    global _pause_requested
+    _pause_requested = False  # Reset pause flag at start
+    
     logger.info("Starting AcceleratorLab full scan")
     
     try:
@@ -286,8 +307,76 @@ def run_full_scan():
         
         # Process each country (only unprocessed ones)
         for idx, country in enumerate(countries_to_process, 1):
-            # Check if pause was requested
-            if _pause_requested:
+            try:
+                # Check if pause was requested
+                check_if_paused()
+                
+                country_name = country["name"]
+                country_slug = country.get("slug", country_name.lower().replace(" ", "-"))
+                country_url = country["url"]
+                
+                # Get ISO3 country code for proper storage
+                from src.utils.geocoding import get_country_info
+                country_iso3, _, _ = get_country_info(country_name)
+                if not country_iso3:
+                    # Fallback to uppercase slug if ISO3 not found
+                    country_iso3 = country_slug.upper().replace("-", "")[:3]
+                    logger.warning(f"Could not find ISO3 for {country_name}, using fallback: {country_iso3}")
+                
+                current_completed = skipped_count + idx - 1
+                logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
+                
+                # Update status with accurate progress
+                save_scan_status("running", {
+                    "current_country": country_name,
+                    "current_country_code": country_iso3,
+                    "countries_completed": current_completed,
+                    "total_countries": total_countries,
+                    "countries_remaining": len(countries_to_process) - idx,
+                    "resumed": skipped_count > 0,
+                    "start_time": datetime.utcnow().isoformat()
+                })
+                
+                try:
+                    # Scan blogs
+                    blogs = scan_country_blogs(driver, country_url, country_slug, country_name)
+                    
+                    # Scan publications
+                    publications = scan_country_publications(driver, country_url, country_slug, country_name)
+                    
+                    # Combine results
+                    all_articles = blogs + publications
+                    
+                    # Save country data using ISO3 code (even if empty, to mark as processed)
+                    save_country_data(country_iso3, country_name, all_articles)
+                    if all_articles:
+                        logger.info(f"Saved {len(all_articles)} articles for {country_name} ({country_iso3})")
+                    else:
+                        logger.warning(f"No articles found for {country_name} ({country_iso3})")
+                    
+                except ScanPausedException:
+                    # Re-raise to be caught by outer handler
+                    raise
+                except Exception as e:
+                    logger.error(f"Error processing {country_name}: {e}")
+                    # Save empty data to mark country as attempted (using ISO3 code)
+                    try:
+                        save_country_data(country_iso3, country_name, [])
+                    except:
+                        pass
+                
+                finally:
+                    # Always update summary after each country (success or failure)
+                    # This ensures dashboard shows real-time progress
+                    try:
+                        logger.debug(f"Updating summary after processing {country_name}")
+                        summary = calculate_summary()
+                        save_summary(summary)
+                    except Exception as summary_error:
+                        logger.warning(f"Failed to update summary: {summary_error}")
+            
+            except ScanPausedException:
+                # Pause was requested - save state and exit
                 current_completed = skipped_count + idx - 1
                 logger.info(f"⏸️  Scan paused by user at {current_completed}/{total_countries} countries")
                 save_scan_status("paused", {
@@ -298,68 +387,7 @@ def run_full_scan():
                     "resumed": skipped_count > 0,
                     "paused_at": datetime.utcnow().isoformat()
                 })
-                return  # Exit the scan loop
-            
-            country_name = country["name"]
-            country_slug = country.get("slug", country_name.lower().replace(" ", "-"))
-            country_url = country["url"]
-            
-            # Get ISO3 country code for proper storage
-            from src.utils.geocoding import get_country_info
-            country_iso3, _, _ = get_country_info(country_name)
-            if not country_iso3:
-                # Fallback to uppercase slug if ISO3 not found
-                country_iso3 = country_slug.upper().replace("-", "")[:3]
-                logger.warning(f"Could not find ISO3 for {country_name}, using fallback: {country_iso3}")
-            
-            current_completed = skipped_count + idx - 1
-            logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
-            
-            # Update status with accurate progress
-            save_scan_status("running", {
-                "current_country": country_name,
-                "current_country_code": country_iso3,
-                "countries_completed": current_completed,
-                "total_countries": total_countries,
-                "countries_remaining": len(countries_to_process) - idx,
-                "resumed": skipped_count > 0,
-                "start_time": datetime.utcnow().isoformat()
-            })
-            
-            try:
-                # Scan blogs
-                blogs = scan_country_blogs(driver, country_url, country_slug, country_name)
-                
-                # Scan publications
-                publications = scan_country_publications(driver, country_url, country_slug, country_name)
-                
-                # Combine results
-                all_articles = blogs + publications
-                
-                # Save country data using ISO3 code (even if empty, to mark as processed)
-                save_country_data(country_iso3, country_name, all_articles)
-                if all_articles:
-                    logger.info(f"Saved {len(all_articles)} articles for {country_name} ({country_iso3})")
-                else:
-                    logger.warning(f"No articles found for {country_name} ({country_iso3})")
-                
-            except Exception as e:
-                logger.error(f"Error processing {country_name}: {e}")
-                # Save empty data to mark country as attempted (using ISO3 code)
-                try:
-                    save_country_data(country_iso3, country_name, [])
-                except:
-                    pass
-            
-            finally:
-                # Always update summary after each country (success or failure)
-                # This ensures dashboard shows real-time progress
-                try:
-                    logger.debug(f"Updating summary after processing {country_name}")
-                    summary = calculate_summary()
-                    save_summary(summary)
-                except Exception as summary_error:
-                    logger.warning(f"Failed to update summary: {summary_error}")
+                return  # Exit the scan
         
         # Calculate and save summary
         logger.info("Calculating summary statistics...")
@@ -436,9 +464,9 @@ def pause_scan() -> tuple[bool, str]:
         
         # Set pause flag
         _pause_requested = True
-        logger.info("⏸️  Pause requested - scan will pause after current country completes")
+        logger.info("⏸️  Pause requested - scan will stop immediately after current article")
         
-        return True, "Pause requested - scan will pause after current country completes"
+        return True, "Pause requested - scan will stop immediately after current article completes"
 
 
 def auto_resume_scan_if_needed():

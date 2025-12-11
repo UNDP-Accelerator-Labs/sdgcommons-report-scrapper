@@ -415,7 +415,7 @@
             are excluded to maintain data quality.
           </p>
           <p>
-            <strong>⏸️  Pause Feature:</strong> While a scan is running, you can
+            <strong>⏸️ Pause Feature:</strong> While a scan is running, you can
             click the "Pause Scan" button to pause it after the current country
             completes. Click "Resume Scan" to continue from where you paused.
           </p>
@@ -797,20 +797,27 @@
           const hasProgress =
             data.progress && data.progress.countries_completed > 0;
           const canResume =
-            (data.status === "idle" || data.status === "error" || data.status === "paused") && hasProgress;
+            (data.status === "idle" ||
+              data.status === "error" ||
+              data.status === "paused") &&
+            hasProgress;
 
           resumeBtn.style.display = canResume ? "inline-block" : "none";
           resumeBtn.disabled = data.status === "running";
           resumeBtn.textContent =
             data.status === "running" ? "Scan in Progress..." : "Resume Scan";
-          
+
           // Show Pause button only when scan is running
-          pauseBtn.style.display = data.status === "running" ? "inline-block" : "none";
+          pauseBtn.style.display =
+            data.status === "running" ? "inline-block" : "none";
           pauseBtn.disabled = false;
           pauseBtn.textContent = "Pause Scan";
 
           // Update progress
-          if ((data.status === "running" || data.status === "paused") && data.progress) {
+          if (
+            (data.status === "running" || data.status === "paused") &&
+            data.progress
+          ) {
             document.getElementById("progressSection").style.display = "block";
 
             const completed = data.progress.countries_completed || 0;

@@ -94,6 +94,10 @@
         background: #4caf50;
         color: white;
       }
+      .status-paused {
+        background: #ff9800;
+        color: white;
+      }
       .status-completed {
         background: #2196f3;
         color: white;
@@ -411,6 +415,11 @@
             are excluded to maintain data quality.
           </p>
           <p>
+            <strong>⏸️  Pause Feature:</strong> While a scan is running, you can
+            click the "Pause Scan" button to pause it after the current country
+            completes. Click "Resume Scan" to continue from where you paused.
+          </p>
+          <p>
             <strong>🔄 Resume Feature:</strong> If a scan is interrupted (server
             restart, error, etc.), a "Resume Scan" button will appear. Click it
             to continue from where the scan stopped. Already-processed countries
@@ -427,6 +436,13 @@
           style="margin-left: 10px; background: #ff9800; display: none"
         >
           Resume Scan
+        </button>
+        <button
+          id="pauseBtn"
+          onclick="pauseScan()"
+          style="margin-left: 10px; background: #ff5722; display: none"
+        >
+          Pause Scan
         </button>
         <button
           onclick="refreshData()"
@@ -663,6 +679,51 @@
         }
       }
 
+      async function pauseScan() {
+        if (!apiKey) {
+          showApiKeyModal();
+          return;
+        }
+
+        const btn = document.getElementById("pauseBtn");
+        btn.disabled = true;
+        btn.textContent = "Pausing...";
+
+        try {
+          const response = await fetch("/acceleratorlab/scan/pause", {
+            method: "POST",
+            headers: {
+              "X-API-KEY": apiKey,
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.status === 401) {
+            // Clear invalid API key and show modal again
+            localStorage.removeItem("acceleratorlab_api_key");
+            apiKey = null;
+            btn.disabled = false;
+            btn.textContent = "Pause Scan";
+            showNotification("Invalid API key. Please try again.", "error");
+            showApiKeyModal();
+            return;
+          }
+
+          if (data.success) {
+            showNotification(data.message, "success");
+          } else {
+            showNotification("Error: " + data.error, "error");
+            btn.disabled = false;
+            btn.textContent = "Pause Scan";
+          }
+        } catch (error) {
+          showNotification("Error pausing scan: " + error, "error");
+          btn.disabled = false;
+          btn.textContent = "Pause Scan";
+        }
+      }
+
       function showNotification(message, type) {
         // Create notification element
         const notification = document.createElement("div");
@@ -721,9 +782,10 @@
           badge.className = "status-badge status-" + data.status;
           badge.textContent = data.status.toUpperCase();
 
-          // Update start and resume buttons
+          // Update start, resume, and pause buttons
           const startBtn = document.getElementById("startBtn");
           const resumeBtn = document.getElementById("resumeBtn");
+          const pauseBtn = document.getElementById("pauseBtn");
 
           startBtn.disabled = data.status === "running";
           startBtn.textContent =
@@ -731,19 +793,24 @@
               ? "Scan in Progress..."
               : "Start New Scan";
 
-          // Show Resume button only when there's an interrupted scan
+          // Show Resume button when there's a paused or interrupted scan
           const hasProgress =
             data.progress && data.progress.countries_completed > 0;
           const canResume =
-            (data.status === "idle" || data.status === "error") && hasProgress;
+            (data.status === "idle" || data.status === "error" || data.status === "paused") && hasProgress;
 
           resumeBtn.style.display = canResume ? "inline-block" : "none";
           resumeBtn.disabled = data.status === "running";
           resumeBtn.textContent =
             data.status === "running" ? "Scan in Progress..." : "Resume Scan";
+          
+          // Show Pause button only when scan is running
+          pauseBtn.style.display = data.status === "running" ? "inline-block" : "none";
+          pauseBtn.disabled = false;
+          pauseBtn.textContent = "Pause Scan";
 
           // Update progress
-          if (data.status === "running" && data.progress) {
+          if ((data.status === "running" || data.status === "paused") && data.progress) {
             document.getElementById("progressSection").style.display = "block";
 
             const completed = data.progress.countries_completed || 0;
@@ -751,15 +818,24 @@
             const remaining = data.progress.countries_remaining || 0;
             const percentage = Math.round((completed / total) * 100);
             const isResumed = data.progress.resumed || false;
+            const isPaused = data.status === "paused";
 
             document.getElementById("progressFill").style.width =
               percentage + "%";
             document.getElementById("progressFill").textContent =
               percentage + "%";
 
-            const currentCountry =
-              data.progress.current_country || "Initializing...";
-            let progressText = `Processing: ${currentCountry} (${completed}/${total})`;
+            let progressText = "";
+            if (isPaused) {
+              progressText = `⏸️  Paused at ${completed}/${total} countries`;
+              if (remaining > 0) {
+                progressText += ` - ${remaining} remaining`;
+              }
+            } else {
+              const currentCountry =
+                data.progress.current_country || "Initializing...";
+              progressText = `Processing: ${currentCountry} (${completed}/${total})`;
+            }
 
             // Add resume indicator if scan was resumed
             if (isResumed && remaining > 0) {
@@ -785,7 +861,7 @@
             loadSummary();
           }
 
-          // Stop polling if scan completed or error
+          // Stop polling if scan completed or error (but keep polling if paused)
           if (data.status === "completed" || data.status === "error") {
             stopStatusPolling();
             loadSummary(); // Refresh summary when scan completes

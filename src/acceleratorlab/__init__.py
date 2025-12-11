@@ -21,7 +21,7 @@ from .file_storage import (
     get_all_countries,
     calculate_summary
 )
-from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed
+from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed, pause_scan
 
 __all__ = [
     'ACCELERATORLAB_KEYWORDS',
@@ -45,5 +45,6 @@ __all__ = [
     'calculate_summary',
     'start_scan_async',
     'get_scan_status',
-    'run_full_scan'
+    'pause_scan',
+    'run_full_scan',
 ]

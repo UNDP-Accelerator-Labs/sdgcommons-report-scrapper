@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Global scanner state
 _scanner_thread = None
 _scanner_lock = threading.Lock()
+_pause_requested = False
 
 
 def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str) -> List[Dict[str, Any]]:
@@ -285,6 +286,20 @@ def run_full_scan():
         
         # Process each country (only unprocessed ones)
         for idx, country in enumerate(countries_to_process, 1):
+            # Check if pause was requested
+            if _pause_requested:
+                current_completed = skipped_count + idx - 1
+                logger.info(f"⏸️  Scan paused by user at {current_completed}/{total_countries} countries")
+                save_scan_status("paused", {
+                    "current_country": None,
+                    "countries_completed": current_completed,
+                    "total_countries": total_countries,
+                    "countries_remaining": len(countries_to_process) - idx + 1,
+                    "resumed": skipped_count > 0,
+                    "paused_at": datetime.utcnow().isoformat()
+                })
+                return  # Exit the scan loop
+            
             country_name = country["name"]
             country_slug = country.get("slug", country_name.lower().replace(" ", "-"))
             country_url = country["url"]
@@ -401,6 +416,29 @@ def get_scan_status() -> Dict[str, Any]:
         dict: Status information with progress details
     """
     return load_scan_status()
+
+
+def pause_scan() -> tuple[bool, str]:
+    """
+    Request to pause the currently running scan.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    global _pause_requested
+    
+    with _scanner_lock:
+        status = load_scan_status()
+        current_status = status.get("status")
+        
+        if current_status != "running":
+            return False, f"Cannot pause: scan is not running (current status: {current_status})"
+        
+        # Set pause flag
+        _pause_requested = True
+        logger.info("⏸️  Pause requested - scan will pause after current country completes")
+        
+        return True, "Pause requested - scan will pause after current country completes"
 
 
 def auto_resume_scan_if_needed():

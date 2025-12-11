@@ -9,7 +9,8 @@ from src.acceleratorlab import (
     load_country_data,
     get_all_countries,
     calculate_summary,
-    load_summary
+    load_summary,
+    pause_scan
 )
 from src.api.auth import require_api_key
 
@@ -113,7 +114,7 @@ def continue_scan():
             }), 400
         
         # Reset status to idle to allow resume
-        if current_status in ["completed", "error"]:
+        if current_status in ["completed", "error", "paused"]:
             logger.info(f"Resetting status from '{current_status}' to 'idle' for resume")
             save_scan_status("idle", {})
         
@@ -133,6 +134,46 @@ def continue_scan():
             
     except Exception as e:
         logger.error(f"Error continuing scan: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@acceleratorlab_bp.route("/scan/pause", methods=["POST"])
+def pause_scan_endpoint():
+    """
+    Pause the currently running scan.
+    
+    POST /acceleratorlab/scan/pause
+    Requires: API key authentication
+    
+    Returns:
+        JSON response with success status and message
+    """
+    # Check API key
+    ok, err = require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    logger.info("Received request to pause scan")
+    
+    try:
+        success, message = pause_scan()
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": message
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": message
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error pausing scan: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

@@ -301,6 +301,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /acceleratorlab/scan/country:
+    post:
+      tags:
+        - AcceleratorLab Scanner
+      summary: Scan a specific country
+      description: >
+        Initiates a scan for a single specific country by name (e.g., "Nigeria", "Albania", "United Kingdom").
+        The scan runs asynchronously in the background and typically completes within minutes.
+        This is useful when you want to analyze or update data for just one country instead of running a full scan.
+        Requires API key authentication.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - country
+              properties:
+                country:
+                  type: string
+                  description: Name of the country to scan (e.g., "Nigeria", "Albania", "Kenya")
+                  example: "Nigeria"
+      responses:
+        "200":
+          description: Country scan started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Scan started for Nigeria"
+                  country:
+                    type: string
+                    example: "Nigeria"
+        "400":
+          description: Invalid request or scan already running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "A scan is already in progress"
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /acceleratorlab/scan/status:
     get:
       tags:

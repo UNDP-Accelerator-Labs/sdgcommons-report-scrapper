@@ -98,7 +98,7 @@ def is_article_url(url):
     return len(path) > 10
 
 
-def handle_pagination(driver, page_url, max_clicks=20):
+def handle_pagination(driver, page_url, max_clicks=20, max_articles=500):
     """
     Handle "View More" button pagination (no URL-based pagination).
     UNDP country pages use a "View More" button that loads more content via JavaScript.
@@ -107,13 +107,15 @@ def handle_pagination(driver, page_url, max_clicks=20):
         driver: Selenium WebDriver instance
         page_url: URL of the blogs or publications page
         max_clicks: Maximum number of "View More" clicks (default 20)
+        max_articles: Maximum total articles to collect (safety limit, default 500)
         
     Returns:
         list: All article URLs found across all loaded content
     """
-    logger.info(f"Starting pagination handling for {page_url}")
+    logger.info(f"Starting pagination handling for {page_url} (max_clicks: {max_clicks}, max_articles: {max_articles})")
     all_urls = []
     click_count = 0
+    no_new_content_count = 0  # Track consecutive clicks with no new content
     
     try:
         driver.get(page_url)
@@ -121,6 +123,16 @@ def handle_pagination(driver, page_url, max_clicks=20):
         
         # Keep clicking "View More" button until it disappears or max clicks reached
         while click_count < max_clicks:
+            # Safety check: stop if we've collected enough articles
+            if len(all_urls) >= max_articles:
+                logger.warning(f"Reached max articles limit ({max_articles}), stopping pagination")
+                break
+            
+            # Safety check: stop if we've had 3 consecutive clicks with no new content
+            if no_new_content_count >= 3:
+                logger.warning(f"No new content after {no_new_content_count} consecutive clicks, stopping pagination")
+                break
+            
             # Get current page HTML and extract URLs
             soup = BeautifulSoup(driver.page_source, "html.parser")
             urls = extract_article_urls(soup, page_url)
@@ -128,10 +140,19 @@ def handle_pagination(driver, page_url, max_clicks=20):
             # Track newly found URLs
             new_urls = [url for url in urls if url not in all_urls]
             if new_urls:
-                logger.debug(f"Found {len(new_urls)} new articles (total: {len(urls)})")
+                logger.debug(f"Found {len(new_urls)} new articles (total: {len(all_urls) + len(new_urls)})")
                 all_urls.extend(new_urls)
+                no_new_content_count = 0  # Reset counter when we find new content
+            else:
+                no_new_content_count += 1
+                logger.debug(f"No new articles found on this click ({no_new_content_count}/3)")
             
             # Look for "View More" button
+            # First, scroll to bottom of page to ensure button is loaded in DOM
+            logger.debug(f"Scrolling to bottom to load 'View More' button...")
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            
             view_more_found = False
             view_more_selectors = [
                 (By.XPATH, "//button[contains(translate(text(), 'VIEWMORE', 'viewmore'), 'view more')]"),
@@ -155,9 +176,19 @@ def handle_pagination(driver, page_url, max_clicks=20):
                         logger.debug(f"Button found but not displayed: {by}={value}")
                         continue
                     
-                    # Scroll to button
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
-                    time.sleep(1)
+                    # Scroll to button - ensure it's fully in view at the bottom of viewport
+                    # This happens EVERY iteration of the while loop
+                    logger.info(f"Scrolling to 'View More' button for click #{click_count + 1}...")
+                    driver.execute_script("""
+                        arguments[0].scrollIntoView({behavior: 'smooth', block: 'end', inline: 'nearest'});
+                    """, button)
+                    time.sleep(1.5)
+                    
+                    # Additional check: ensure button is still visible after scroll
+                    if not button.is_displayed():
+                        logger.debug(f"Button not visible after scroll, trying alternative scroll")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+                        time.sleep(1)
                     
                     # Click using JavaScript (more reliable than .click())
                     logger.info(f"Clicking 'View More' button (click #{click_count + 1})...")

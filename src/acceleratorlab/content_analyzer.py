@@ -303,7 +303,7 @@ def analyze_pdf_content(pdf_url, timeout=30, use_selenium=True):
     
     Args:
         pdf_url: URL of the PDF to download
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds (default 30, max enforced is 60)
         use_selenium: Whether to fallback to Selenium on failure
         
     Returns:
@@ -313,11 +313,14 @@ def analyze_pdf_content(pdf_url, timeout=30, use_selenium=True):
         logger.warning("PDF extraction not available")
         return ""
     
+    # Safety: enforce maximum timeout of 60 seconds
+    timeout = min(timeout, 60)
+    
     # Make URL absolute if needed
     if pdf_url.startswith("/"):
         pdf_url = f"https://www.undp.org{pdf_url}"
     
-    logger.info(f"Extracting PDF content from: {pdf_url}")
+    logger.info(f"Extracting PDF content from: {pdf_url} (timeout: {timeout}s)")
     
     # Try 1: Direct download with requests (fast, no browser needed)
     try:

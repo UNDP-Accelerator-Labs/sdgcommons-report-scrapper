@@ -20,6 +20,15 @@ def manual_scraper_run():
     if is_scraping:
         return jsonify({"error": "Scraper is already running"}), 409
     
+    # Check if AcceleratorLab scan is running (prevent concurrent browser usage)
+    try:
+        from src.acceleratorlab import get_scan_status
+        accel_status = get_scan_status()
+        if accel_status.get("status") == "running":
+            return jsonify({"error": "AcceleratorLab scan is currently running. Please wait for it to complete."}), 409
+    except Exception as e:
+        logger.warning(f"Could not check AcceleratorLab scan status: {e}")
+    
     ok, err = require_api_key()
     if not ok:
         return jsonify({"error": err}), 401
@@ -46,6 +55,15 @@ def rescrape_high_relevance():
     # Check if scraper is already running
     if get_scraping_status():
         return jsonify({"error": "Scraper is already running"}), 409
+    
+    # Check if AcceleratorLab scan is running (prevent concurrent browser usage)
+    try:
+        from src.acceleratorlab import get_scan_status
+        accel_status = get_scan_status()
+        if accel_status.get("status") == "running":
+            return jsonify({"error": "AcceleratorLab scan is currently running. Please wait for it to complete."}), 409
+    except Exception as e:
+        logger.warning(f"Could not check AcceleratorLab scan status: {e}")
     
     # Require API key for this operation
     ok, err = require_api_key()

@@ -39,7 +39,7 @@ def check_if_paused():
         raise ScanPausedException("Scan paused by user")
 
 
-def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str) -> List[Dict[str, Any]]:
+def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30) -> List[Dict[str, Any]]:
     """
     Scan all blogs for a country and classify them.
     
@@ -48,6 +48,8 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
         country_url: Country office homepage URL
         country_code: ISO3 country code
         country_name: Country name
+        max_articles: Maximum number of articles to process per country (default 200)
+        timeout_per_article: Maximum seconds to spend on each article (default 30)
         
     Returns:
         list: Classified articles with metadata
@@ -55,6 +57,8 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
     logger.info(f"Scanning blogs for {country_name} ({country_code})")
     
     results = []
+    articles_processed = 0
+    scan_start_time = time.time()
     
     # Only scan /blogs page (exclude /news and /stories)
     blogs_patterns = [
@@ -80,6 +84,17 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                     # Check if pause was requested
                     check_if_paused()
                     
+                    # Safety check: limit number of articles processed
+                    if articles_processed >= max_articles:
+                        logger.warning(f"Reached max article limit ({max_articles}) for {country_name} blogs, skipping remaining articles")
+                        break
+                    
+                    # Safety check: timeout protection
+                    if time.time() - scan_start_time > 86400:  # 24 hours max per country section
+                        logger.error(f"Timeout: Blog scanning for {country_name} exceeded 24 hours, stopping")
+                        break
+                    
+                    article_start_time = time.time()
                     try:
                         driver.get(url)
                         time.sleep(1)
@@ -130,8 +145,14 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                         logger.debug(f"Classified as {classification}: {article_data['title'][:50]}")
                         
                     except Exception as e:
-                        logger.error(f"Error analyzing article {url}: {e}")
+                        article_time = time.time() - article_start_time
+                        if article_time > timeout_per_article:
+                            logger.error(f"Timeout: Article {url} took {article_time:.1f}s (limit: {timeout_per_article}s)")
+                        else:
+                            logger.error(f"Error analyzing article {url}: {e}")
                         continue
+                    finally:
+                        articles_processed += 1
                 
                 # Found and processed blogs, stop trying other patterns
                 break
@@ -143,7 +164,7 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
     return results
 
 
-def scan_country_publications(driver, country_url: str, country_code: str, country_name: str) -> List[Dict[str, Any]]:
+def scan_country_publications(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30) -> List[Dict[str, Any]]:
     """
     Scan all publications for a country and classify them.
     
@@ -152,6 +173,8 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
         country_url: Country office homepage URL
         country_code: ISO3 country code
         country_name: Country name
+        max_articles: Maximum number of articles to process per country (default 200)
+        timeout_per_article: Maximum seconds to spend on each article (default 30)
         
     Returns:
         list: Classified publications with metadata
@@ -159,6 +182,8 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
     logger.info(f"Scanning publications for {country_name} ({country_code})")
     
     results = []
+    articles_processed = 0
+    scan_start_time = time.time()
     
     # Only scan /publications page
     pubs_patterns = [
@@ -183,6 +208,17 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                     # Check if pause was requested
                     check_if_paused()
                     
+                    # Safety check: limit number of articles processed
+                    if articles_processed >= max_articles:
+                        logger.warning(f"Reached max article limit ({max_articles}) for {country_name} publications, skipping remaining articles")
+                        break
+                    
+                    # Safety check: timeout protection
+                    if time.time() - scan_start_time > 86400:  # 24 hours max per country section
+                        logger.error(f"Timeout: Publication scanning for {country_name} exceeded 24 hours, stopping")
+                        break
+                    
+                    article_start_time = time.time()
                     try:
                         driver.get(url)
                         time.sleep(1)
@@ -233,8 +269,14 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                         logger.info(f"Classified publication as {classification}: {article_data['title']}")
                         
                     except Exception as e:
-                        logger.error(f"Error analyzing publication {url}: {e}")
+                        article_time = time.time() - article_start_time
+                        if article_time > timeout_per_article:
+                            logger.error(f"Timeout: Publication {url} took {article_time:.1f}s (limit: {timeout_per_article}s)")
+                        else:
+                            logger.error(f"Error analyzing publication {url}: {e}")
                         continue
+                    finally:
+                        articles_processed += 1
                 
                 break
                 
@@ -243,6 +285,163 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
             continue
     
     return results
+
+
+def scan_single_country(country_name: str) -> Dict[str, Any]:
+    """
+    Scan a specific country by name.
+    
+    Args:
+        country_name: Name of the country to scan (e.g., "Albania", "Nigeria")
+        
+    Returns:
+        dict: Result with success status, message, and article counts
+    """
+    global _pause_requested
+    _pause_requested = False  # Reset pause flag
+    
+    logger.info(f"Starting single country scan for: {country_name}")
+    
+    try:
+        # Setup Selenium
+        setup_selenium()
+        from src.scraper.selenium_driver import driver
+        
+        # Discover all countries to find the requested one
+        logger.info("Discovering UNDP countries to find target...")
+        countries = discover_countries()
+        
+        # Find the country (case-insensitive search)
+        target_country = None
+        country_name_lower = country_name.lower()
+        
+        for country in countries:
+            if country["name"].lower() == country_name_lower:
+                target_country = country
+                break
+        
+        if not target_country:
+            # Try partial match
+            for country in countries:
+                if country_name_lower in country["name"].lower():
+                    target_country = country
+                    logger.info(f"Found partial match: {country['name']}")
+                    break
+        
+        if not target_country:
+            error_msg = f"Country '{country_name}' not found. Please check the country name."
+            logger.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "available_countries": [c["name"] for c in countries[:10]]  # Show first 10 as examples
+            }
+        
+        country_name = target_country["name"]
+        country_slug = target_country.get("slug", country_name.lower().replace(" ", "-"))
+        country_url = target_country["url"]
+        
+        # Get ISO3 country code
+        from src.utils.geocoding import get_country_info
+        country_iso3, _, _ = get_country_info(country_name)
+        if not country_iso3:
+            country_iso3 = country_slug.upper().replace("-", "")[:3]
+            logger.warning(f"Could not find ISO3 for {country_name}, using fallback: {country_iso3}")
+        
+        logger.info(f"Scanning {country_name} ({country_iso3})")
+        logger.info(f"Country URL: {country_url}")
+        
+        # Update status
+        save_scan_status("running", {
+            "current_country": country_name,
+            "current_country_code": country_iso3,
+            "countries_completed": 0,
+            "total_countries": 1,
+            "countries_remaining": 0,
+            "single_country_mode": True,
+            "start_time": datetime.utcnow().isoformat(),
+            "last_heartbeat": datetime.utcnow().isoformat()
+        })
+        
+        scan_start = time.time()
+        
+        try:
+            # Scan blogs
+            blogs = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
+            
+            # Scan publications
+            publications = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
+            
+            # Combine results
+            all_articles = blogs + publications
+            
+            # Save country data
+            save_country_data(country_iso3, country_name, all_articles)
+            
+            scan_duration = time.time() - scan_start
+            
+            logger.info(f"✅ Successfully scanned {country_name}: {len(all_articles)} articles ({len(blogs)} blogs, {len(publications)} publications) in {scan_duration:.1f}s")
+            
+            # Count classifications
+            accel_count = sum(1 for a in all_articles if a.get("classification") == "accelerator_lab")
+            country_office_count = sum(1 for a in all_articles if a.get("classification") == "country_office")
+            
+            # Update summary
+            summary = calculate_summary()
+            save_summary(summary)
+            
+            # Update status to completed
+            save_scan_status("completed", {
+                "current_country": None,
+                "countries_completed": 1,
+                "total_countries": 1,
+                "single_country_mode": True,
+                "start_time": datetime.utcnow().isoformat(),
+                "end_time": datetime.utcnow().isoformat()
+            })
+            
+            return {
+                "success": True,
+                "country": country_name,
+                "country_code": country_iso3,
+                "total_articles": len(all_articles),
+                "blogs": len(blogs),
+                "publications": len(publications),
+                "accelerator_lab_count": accel_count,
+                "country_office_count": country_office_count,
+                "duration_seconds": round(scan_duration, 2)
+            }
+            
+        except ScanPausedException:
+            logger.info(f"⏸️  Scan paused by user for {country_name}")
+            save_scan_status("paused", {
+                "current_country": country_name,
+                "single_country_mode": True,
+                "paused_at": datetime.utcnow().isoformat()
+            })
+            return {
+                "success": False,
+                "error": "Scan was paused by user",
+                "country": country_name
+            }
+        except Exception as e:
+            logger.error(f"Error scanning {country_name}: {e}", exc_info=True)
+            save_scan_status("error", {}, error=str(e))
+            return {
+                "success": False,
+                "error": str(e),
+                "country": country_name
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to scan single country: {e}", exc_info=True)
+        save_scan_status("error", {}, error=str(e))
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        cleanup_selenium()
 
 
 def run_full_scan():
@@ -325,6 +524,7 @@ def run_full_scan():
                 
                 current_completed = skipped_count + idx - 1
                 logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
+                logger.info(f"📊 Progress: {current_completed}/{total_countries} countries, {len(countries_to_process) - idx} remaining")
                 
                 # Update status with accurate progress
                 save_scan_status("running", {
@@ -334,15 +534,23 @@ def run_full_scan():
                     "total_countries": total_countries,
                     "countries_remaining": len(countries_to_process) - idx,
                     "resumed": skipped_count > 0,
-                    "start_time": datetime.utcnow().isoformat()
+                    "start_time": datetime.utcnow().isoformat(),
+                    "last_heartbeat": datetime.utcnow().isoformat()
                 })
                 
+                country_start_time = time.time()
                 try:
-                    # Scan blogs
-                    blogs = scan_country_blogs(driver, country_url, country_slug, country_name)
+                    # Scan blogs (with timeout and limits)
+                    blogs = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
                     
-                    # Scan publications
-                    publications = scan_country_publications(driver, country_url, country_slug, country_name)
+                    # Check if we've spent too long on this country
+                    country_elapsed = time.time() - country_start_time
+                    if country_elapsed > 172800:  # 48 hours max per country total (24h blogs + 24h publications)
+                        logger.error(f"CRITICAL TIMEOUT: {country_name} took {country_elapsed/3600:.1f} hours, skipping publications")
+                        publications = []
+                    else:
+                        # Scan publications (with timeout and limits)
+                        publications = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
                     
                     # Combine results
                     all_articles = blogs + publications
@@ -359,11 +567,13 @@ def run_full_scan():
                     raise
                 except Exception as e:
                     logger.error(f"Error processing {country_name}: {e}")
+                    logger.error(f"Error details: {type(e).__name__}: {str(e)}", exc_info=True)
                     # Save empty data to mark country as attempted (using ISO3 code)
                     try:
                         save_country_data(country_iso3, country_name, [])
-                    except:
-                        pass
+                        logger.info(f"Marked {country_name} as processed despite error")
+                    except Exception as save_error:
+                        logger.error(f"Failed to save empty data for {country_name}: {save_error}")
                 
                 finally:
                     # Always update summary after each country (success or failure)
@@ -428,12 +638,61 @@ def start_scan_async():
         if status.get("status") == "running":
             return False, "A scan is already in progress"
         
+        # Check if regular scraper is running (prevent concurrent browser usage)
+        try:
+            from src.scheduler import get_scraping_status
+            scraper_status = get_scraping_status()
+            if scraper_status.get("currently_running", False):
+                return False, "Regular scraper is currently running. Please wait for it to complete."
+        except Exception as e:
+            logger.warning(f"Could not check regular scraper status: {e}")
+        
         # Start new scan thread
         _scanner_thread = threading.Thread(target=run_full_scan, daemon=True)
         _scanner_thread.start()
         
         logger.info("Started AcceleratorLab scan in background thread")
         return True, "Scan started successfully"
+
+
+def start_single_country_scan_async(country_name: str):
+    """
+    Start a single country scan in a background thread.
+    
+    Args:
+        country_name: Name of the country to scan
+        
+    Returns:
+        tuple: (success: bool, message: str or dict)
+    """
+    global _scanner_thread
+    
+    with _scanner_lock:
+        # Check if scan is already running
+        status = load_scan_status()
+        if status.get("status") == "running":
+            return False, "A scan is already in progress"
+        
+        # Check if regular scraper is running
+        try:
+            from src.scheduler import get_scraping_status
+            scraper_status = get_scraping_status()
+            if scraper_status.get("currently_running", False):
+                return False, "Regular scraper is currently running. Please wait for it to complete."
+        except Exception as e:
+            logger.warning(f"Could not check regular scraper status: {e}")
+        
+        # Start scan in background thread
+        def run_scan():
+            result = scan_single_country(country_name)
+            # Store result in status for retrieval
+            logger.info(f"Single country scan completed: {result}")
+        
+        _scanner_thread = threading.Thread(target=run_scan, daemon=True)
+        _scanner_thread.start()
+        
+        logger.info(f"Started single country scan for {country_name} in background thread")
+        return True, f"Scan started for {country_name}"
 
 
 def get_scan_status() -> Dict[str, Any]:

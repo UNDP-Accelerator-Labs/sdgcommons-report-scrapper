@@ -80,6 +80,19 @@ def run_scheduled_scraper():
     from src.scraper import scrape_reports
 
     try:
+        # Check if AcceleratorLab scan is running (prevent concurrent browser usage)
+        try:
+            from src.acceleratorlab import get_scan_status
+            accel_status = get_scan_status()
+            if accel_status.get("status") == "running":
+                logger.warning("AcceleratorLab scan is currently running. Skipping scheduled scraper to avoid conflicts.")
+                _last_scrape_time = datetime.now(timezone.utc)
+                _last_scrape_status = "Skipped - AcceleratorLab scan in progress"
+                save_scraper_status(_last_scrape_time, _last_scrape_status, False)
+                return
+        except Exception as e:
+            logger.warning(f"Could not check AcceleratorLab scan status: {e}")
+        
         _is_scraping = True
         _last_scrape_time = datetime.now(timezone.utc)
         _last_scrape_status = "Running"

@@ -10,7 +10,8 @@ from src.acceleratorlab import (
     get_all_countries,
     calculate_summary,
     load_summary,
-    pause_scan
+    pause_scan,
+    start_single_country_scan_async
 )
 from src.api.auth import require_api_key
 
@@ -174,6 +175,67 @@ def pause_scan_endpoint():
             
     except Exception as e:
         logger.error(f"Error pausing scan: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@acceleratorlab_bp.route("/scan/country", methods=["POST"])
+def scan_single_country():
+    """
+    Scan a specific country by name.
+    
+    POST /acceleratorlab/scan/country
+    Requires: API key authentication
+    
+    Request body:
+        {
+            "country": "Albania"  // or "Nigeria", "Kenya", etc.
+        }
+    
+    Returns:
+        JSON response with success status and scan results
+    """
+    # Check API key
+    ok, err = require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    # Get country name from request
+    data = request.get_json()
+    if not data or "country" not in data:
+        return jsonify({
+            "success": False,
+            "error": "Missing 'country' field in request body"
+        }), 400
+    
+    country_name = data["country"].strip()
+    if not country_name:
+        return jsonify({
+            "success": False,
+            "error": "Country name cannot be empty"
+        }), 400
+    
+    logger.info(f"Received request to scan single country: {country_name}")
+    
+    try:
+        success, message = start_single_country_scan_async(country_name)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": message,
+                "country": country_name
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": message
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error starting single country scan: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

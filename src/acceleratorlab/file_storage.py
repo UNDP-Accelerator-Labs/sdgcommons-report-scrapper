@@ -415,7 +415,25 @@ def acquire_scan_lock() -> bool:
                 # Check status to see if scan is actually running
                 status_data = _load_from_blob(blob_name)
                 if status_data:
+                    current_status = status_data.get("status")
                     last_updated = status_data.get("last_updated")
+                    
+                    # If status is "error", always break the lock (it's a failed attempt)
+                    if current_status == "error":
+                        logger.warning(f"⚠️  Lock held with error status. Breaking lease to allow retry...")
+                        try:
+                            lease_client.break_lease(lease_break_period=0)
+                            time.sleep(2)  # Wait for lease to break
+                            # Try again
+                            _scan_lock_lease = lease_client.acquire(lease_duration=60)
+                            instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+                            logger.info(f"✅ Acquired distributed scan lock after breaking error lock (instance: {instance_id})")
+                            return True
+                        except Exception as break_error:
+                            logger.error(f"Failed to break error lock: {break_error}")
+                            return False
+                    
+                    # For "running" status, check if stale
                     if last_updated:
                         from datetime import datetime, timezone
                         last_update_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))

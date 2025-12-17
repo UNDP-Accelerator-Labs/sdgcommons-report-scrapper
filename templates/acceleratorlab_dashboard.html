@@ -514,10 +514,10 @@
           <div class="stat-value" id="accelCount">-</div>
           <div class="stat-label">AcceleratorLab</div>
         </div>
-        <div class="stat-card">
+        <!-- <div class="stat-card">
           <div class="stat-value" id="countryCount">-</div>
           <div class="stat-label">Country Office Content</div>
-        </div>
+        </div> -->
       </div>
 
       <div class="countries-table">
@@ -891,8 +891,8 @@
             data.total_articles || 0;
           document.getElementById("accelCount").textContent =
             data.total_accelerator_lab || 0;
-          document.getElementById("countryCount").textContent =
-            data.total_country_office || 0;
+          // document.getElementById("countryCount").textContent =
+          //   data.total_country_office || 0;
 
           // Update countries table
           const tbody = document.getElementById("countriesBody");

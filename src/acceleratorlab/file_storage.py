@@ -17,7 +17,7 @@ logging.getLogger('azure.storage.blob').setLevel(logging.WARNING)
 
 # Try to import Azure Blob Storage (optional dependency)
 try:
-    from azure.storage.blob import BlobServiceClient, ContentSettings
+    from azure.storage.blob import BlobServiceClient, ContentSettings, BlobLeaseClient
     AZURE_AVAILABLE = True
 except ImportError:
     AZURE_AVAILABLE = False
@@ -32,6 +32,7 @@ STATUS_FILE = DATA_DIR / "scan_status.json"
 
 # Azure Blob Storage client (initialized on first use)
 _blob_service_client = None
+_scan_lock_lease = None  # Distributed lock lease for scan status
 
 # Automatic environment detection: Use Azure Blob Storage only in production/Azure environment
 # Local development uses local file storage regardless of connection string
@@ -175,7 +176,7 @@ def ensure_directories():
         logger.debug(f"Ensured directories exist: {DATA_DIR}, {COUNTRIES_DIR}")
 
 
-def save_country_data(country_code: str, country_name: str, articles: List[Dict[str, Any]]):
+def save_country_data(country_code: str, country_name: str, articles: List[Dict[str, Any]], pending_tasks: Dict[str, Any] = None):
     """
     Save classified articles for a country to JSON file or Azure Blob.
     
@@ -183,6 +184,7 @@ def save_country_data(country_code: str, country_name: str, articles: List[Dict[
         country_code: ISO3 country code
         country_name: Country name
         articles: List of article dictionaries with classification results
+        pending_tasks: Optional dict with incomplete tasks (blogs_pending, publications_pending, timeout_occurred)
     """
     data = {
         "country_code": country_code,
@@ -191,7 +193,9 @@ def save_country_data(country_code: str, country_name: str, articles: List[Dict[
         "accelerator_lab_count": sum(1 for a in articles if a.get("classification") == "accelerator_lab"),
         "country_office_count": sum(1 for a in articles if a.get("classification") == "country_office"),
         "last_updated": datetime.utcnow().isoformat(),
-        "articles": articles
+        "articles": articles,
+        "pending_tasks": pending_tasks or {},
+        "status": "complete" if not pending_tasks or not any(pending_tasks.values()) else "partial"
     }
     
     if _use_azure_storage:
@@ -318,14 +322,18 @@ def save_scan_status(status: str, progress: Dict[str, Any], error: str = None):
     Save current scan status for monitoring.
     
     Args:
-        status: One of: "idle", "running", "completed", "error"
+        status: One of: "idle", "running", "completed", "error", "paused"
         progress: Dict with current_country, countries_completed, total_countries, etc.
         error: Error message if status is "error"
     """
+    # Add instance ID to track which instance is running the scan
+    instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+    
     status_data = {
         "status": status,
         "progress": progress,
         "error": error,
+        "instance_id": instance_id,
         "last_updated": datetime.utcnow().isoformat()
     }
     
@@ -333,7 +341,7 @@ def save_scan_status(status: str, progress: Dict[str, Any], error: str = None):
         # Save to Azure Blob Storage
         blob_name = "scan_status.json"
         if _save_to_blob(blob_name, status_data):
-            logger.debug(f"Updated scan status in Azure Blob: {status}")
+            logger.debug(f"Updated scan status in Azure Blob: {status} (instance: {instance_id})")
         else:
             logger.error("Failed to save scan status to Azure Blob")
     else:
@@ -346,6 +354,125 @@ def save_scan_status(status: str, progress: Dict[str, Any], error: str = None):
             logger.debug(f"Updated scan status: {status}")
         except Exception as e:
             logger.error(f"Failed to save scan status: {e}")
+
+
+def acquire_scan_lock() -> bool:
+    """
+    Acquire distributed lock for scan status (Azure only).
+    This prevents multiple instances from running scans simultaneously.
+    
+    Returns:
+        bool: True if lock acquired, False otherwise
+    """
+    global _scan_lock_lease
+    
+    if not _use_azure_storage:
+        # Local environment - no locking needed
+        return True
+    
+    try:
+        blob_service_client = _get_blob_service_client()
+        if not blob_service_client:
+            logger.warning("Cannot acquire lock - blob service unavailable")
+            return False
+        
+        blob_name = "scan_status.json"
+        blob_client = blob_service_client.get_blob_client(
+            container=Settings.AZURE_STORAGE_CONTAINER,
+            blob=blob_name
+        )
+        
+        # Ensure blob exists
+        if not blob_client.exists():
+            # Create initial status blob
+            initial_status = {
+                "status": "idle",
+                "progress": {},
+                "error": None,
+                "instance_id": None,
+                "last_updated": datetime.utcnow().isoformat()
+            }
+            blob_client.upload_blob(
+                json.dumps(initial_status),
+                overwrite=True,
+                content_settings=ContentSettings(content_type='application/json')
+            )
+        
+        # Try to acquire lease (60 second lease, auto-renewed during scan)
+        lease_client = blob_client.get_blob_lease_client()
+        _scan_lock_lease = lease_client.acquire(lease_duration=60)
+        
+        instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+        logger.info(f"✅ Acquired distributed scan lock (instance: {instance_id})")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"Failed to acquire scan lock: {e}")
+        _scan_lock_lease = None
+        return False
+
+
+def release_scan_lock():
+    """
+    Release distributed lock for scan status (Azure only).
+    """
+    global _scan_lock_lease
+    
+    if not _use_azure_storage or not _scan_lock_lease:
+        return
+    
+    try:
+        blob_service_client = _get_blob_service_client()
+        if not blob_service_client:
+            return
+        
+        blob_name = "scan_status.json"
+        blob_client = blob_service_client.get_blob_client(
+            container=Settings.AZURE_STORAGE_CONTAINER,
+            blob=blob_name
+        )
+        
+        lease_client = blob_client.get_blob_lease_client(_scan_lock_lease)
+        lease_client.release()
+        
+        instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+        logger.info(f"🔓 Released distributed scan lock (instance: {instance_id})")
+        _scan_lock_lease = None
+        
+    except Exception as e:
+        logger.warning(f"Failed to release scan lock: {e}")
+        _scan_lock_lease = None
+
+
+def renew_scan_lock():
+    """
+    Renew distributed lock lease (should be called periodically during long scans).
+    """
+    global _scan_lock_lease
+    
+    if not _use_azure_storage or not _scan_lock_lease:
+        return True
+    
+    try:
+        blob_service_client = _get_blob_service_client()
+        if not blob_service_client:
+            return False
+        
+        blob_name = "scan_status.json"
+        blob_client = blob_service_client.get_blob_client(
+            container=Settings.AZURE_STORAGE_CONTAINER,
+            blob=blob_name
+        )
+        
+        lease_client = blob_client.get_blob_lease_client(_scan_lock_lease)
+        lease_client.renew()
+        
+        logger.debug("Renewed distributed scan lock")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"Failed to renew scan lock: {e}")
+        return False
 
 
 def load_scan_status() -> Dict[str, Any]:

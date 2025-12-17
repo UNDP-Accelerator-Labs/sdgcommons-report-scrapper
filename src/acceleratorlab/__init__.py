@@ -19,9 +19,12 @@ from .file_storage import (
     save_scan_status,
     load_scan_status,
     get_all_countries,
-    calculate_summary
+    calculate_summary,
+    acquire_scan_lock,
+    release_scan_lock,
+    renew_scan_lock
 )
-from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed, pause_scan, scan_single_country, start_single_country_scan_async
+from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed, pause_scan, scan_single_country, start_single_country_scan_async, resume_country_pending_tasks
 
 __all__ = [
     'ACCELERATORLAB_KEYWORDS',
@@ -43,10 +46,14 @@ __all__ = [
     'load_scan_status',
     'get_all_countries',
     'calculate_summary',
+    'acquire_scan_lock',
+    'release_scan_lock',
+    'renew_scan_lock',
     'start_scan_async',
     'get_scan_status',
     'pause_scan',
     'scan_single_country',
     'start_single_country_scan_async',
+    'resume_country_pending_tasks',
     'run_full_scan',
 ]

@@ -11,7 +11,8 @@ from src.acceleratorlab import (
     calculate_summary,
     load_summary,
     pause_scan,
-    start_single_country_scan_async
+    start_single_country_scan_async,
+    resume_country_pending_tasks
 )
 from src.api.auth import require_api_key
 
@@ -236,6 +237,44 @@ def scan_single_country():
             
     except Exception as e:
         logger.error(f"Error starting single country scan: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@acceleratorlab_bp.route("/country/<country_code>/resume", methods=["POST"])
+def resume_country(country_code):
+    """
+    Resume pending tasks for a country that hit the 24-hour timeout.
+    
+    POST /acceleratorlab/country/<country_code>/resume
+    Requires: API key authentication
+    
+    Args:
+        country_code: ISO3 country code (e.g., "ALB", "NGA")
+        
+    Returns:
+        JSON response with resume results and updated article counts
+    """
+    # Check API key
+    ok, err = require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    country_code = country_code.upper()
+    logger.info(f"Received request to resume pending tasks for: {country_code}")
+    
+    try:
+        result = resume_country_pending_tasks(country_code)
+        
+        if result.get("success"):
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error resuming country tasks: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

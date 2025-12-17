@@ -39,7 +39,7 @@ def check_if_paused():
         raise ScanPausedException("Scan paused by user")
 
 
-def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30) -> List[Dict[str, Any]]:
+def scan_country_blogs(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30, country_start_time=None) -> tuple[List[Dict[str, Any]], bool]:
     """
     Scan all blogs for a country and classify them.
     
@@ -50,15 +50,20 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
         country_name: Country name
         max_articles: Maximum number of articles to process per country (default 200)
         timeout_per_article: Maximum seconds to spend on each article (default 30)
+        country_start_time: Overall country scan start time (for 24h timeout check)
         
     Returns:
-        list: Classified articles with metadata
+        tuple: (list of classified articles, bool indicating if timeout occurred)
     """
     logger.info(f"Scanning blogs for {country_name} ({country_code})")
     
     results = []
     articles_processed = 0
     scan_start_time = time.time()
+    timeout_occurred = False
+    
+    # Use country-level start time if provided (for 24h overall timeout)
+    overall_start = country_start_time or scan_start_time
     
     # Only scan /blogs page (exclude /news and /stories)
     blogs_patterns = [
@@ -89,9 +94,10 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
                         logger.warning(f"Reached max article limit ({max_articles}) for {country_name} blogs, skipping remaining articles")
                         break
                     
-                    # Safety check: timeout protection
-                    if time.time() - scan_start_time > 86400:  # 24 hours max per country section
-                        logger.error(f"Timeout: Blog scanning for {country_name} exceeded 24 hours, stopping")
+                    # Safety check: 24-hour country-level timeout protection
+                    if time.time() - overall_start > 86400:  # 24 hours max per country total
+                        logger.warning(f"⏱️ TIMEOUT: {country_name} has been running for 24 hours. Saving {len(results)} blogs processed so far...")
+                        timeout_occurred = True
                         break
                     
                     article_start_time = time.time()
@@ -161,10 +167,13 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
             logger.warning(f"Could not access {blogs_url}: {e}")
             continue
     
-    return results
+    if timeout_occurred:
+        logger.warning(f"⚠️ Blog scanning incomplete for {country_name} due to timeout. Processed {len(results)} articles.")
+    
+    return results, timeout_occurred
 
 
-def scan_country_publications(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30) -> List[Dict[str, Any]]:
+def scan_country_publications(driver, country_url: str, country_code: str, country_name: str, max_articles=200, timeout_per_article=30, country_start_time=None) -> tuple[List[Dict[str, Any]], bool]:
     """
     Scan all publications for a country and classify them.
     
@@ -175,15 +184,20 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
         country_name: Country name
         max_articles: Maximum number of articles to process per country (default 200)
         timeout_per_article: Maximum seconds to spend on each article (default 30)
+        country_start_time: Overall country scan start time (for 24h timeout check)
         
     Returns:
-        list: Classified publications with metadata
+        tuple: (list of classified publications, bool indicating if timeout occurred)
     """
     logger.info(f"Scanning publications for {country_name} ({country_code})")
     
     results = []
     articles_processed = 0
     scan_start_time = time.time()
+    timeout_occurred = False
+    
+    # Use country-level start time if provided (for 24h overall timeout)
+    overall_start = country_start_time or scan_start_time
     
     # Only scan /publications page
     pubs_patterns = [
@@ -213,9 +227,10 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
                         logger.warning(f"Reached max article limit ({max_articles}) for {country_name} publications, skipping remaining articles")
                         break
                     
-                    # Safety check: timeout protection
-                    if time.time() - scan_start_time > 86400:  # 24 hours max per country section
-                        logger.error(f"Timeout: Publication scanning for {country_name} exceeded 24 hours, stopping")
+                    # Safety check: 24-hour country-level timeout protection
+                    if time.time() - overall_start > 86400:  # 24 hours max per country total
+                        logger.warning(f"⏱️ TIMEOUT: {country_name} has been running for 24 hours. Saving {len(results)} publications processed so far...")
+                        timeout_occurred = True
                         break
                     
                     article_start_time = time.time()
@@ -284,7 +299,10 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
             logger.warning(f"Could not access {pubs_url}: {e}")
             continue
     
-    return results
+    if timeout_occurred:
+        logger.warning(f"⚠️ Publication scanning incomplete for {country_name} due to timeout. Processed {len(results)} articles.")
+    
+    return results, timeout_occurred
 
 
 def scan_single_country(country_name: str) -> Dict[str, Any]:
@@ -301,6 +319,16 @@ def scan_single_country(country_name: str) -> Dict[str, Any]:
     _pause_requested = False  # Reset pause flag
     
     logger.info(f"Starting single country scan for: {country_name}")
+    
+    # Try to acquire distributed lock (prevents concurrent scans across Azure instances)
+    from .file_storage import acquire_scan_lock, release_scan_lock
+    
+    if not acquire_scan_lock():
+        logger.error("❌ Cannot start scan - another instance is already running a scan")
+        return {
+            "success": False,
+            "error": "Another instance is already running a scan. Please wait for it to complete."
+        }
     
     try:
         # Setup Selenium
@@ -366,16 +394,71 @@ def scan_single_country(country_name: str) -> Dict[str, Any]:
         scan_start = time.time()
         
         try:
-            # Scan blogs
-            blogs = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
+            # Scan blogs (with country-level timeout tracking)
+            blogs, blogs_timeout = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=scan_start)
             
-            # Scan publications
-            publications = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
+            # Check if we hit timeout during blogs
+            if blogs_timeout:
+                logger.warning(f"⏱️ Timeout occurred during blog scanning for {country_name}")
+                # Save what we have and mark as partial
+                pending_tasks = {
+                    "blogs_complete": False,
+                    "publications_complete": False,
+                    "timeout_at": datetime.utcnow().isoformat(),
+                    "blogs_processed": len(blogs),
+                    "publications_processed": 0
+                }
+                save_country_data(country_iso3, country_name, blogs, pending_tasks=pending_tasks)
+                
+                scan_duration = time.time() - scan_start
+                return {
+                    "success": True,
+                    "country": country_name,
+                    "country_code": country_iso3,
+                    "total_articles": len(blogs),
+                    "blogs": len(blogs),
+                    "publications": 0,
+                    "accelerator_lab_count": sum(1 for a in blogs if a.get("classification") == "accelerator_lab"),
+                    "country_office_count": sum(1 for a in blogs if a.get("classification") == "country_office"),
+                    "duration_seconds": round(scan_duration, 2),
+                    "status": "partial",
+                    "warning": "24-hour timeout reached. Only blogs completed. Use resume to continue."
+                }
+            
+            # Scan publications (with country-level timeout tracking)
+            publications, pubs_timeout = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=scan_start)
             
             # Combine results
             all_articles = blogs + publications
             
-            # Save country data
+            # Check if we hit timeout during publications
+            if pubs_timeout:
+                logger.warning(f"⏱️ Timeout occurred during publication scanning for {country_name}")
+                pending_tasks = {
+                    "blogs_complete": True,
+                    "publications_complete": False,
+                    "timeout_at": datetime.utcnow().isoformat(),
+                    "blogs_processed": len(blogs),
+                    "publications_processed": len(publications)
+                }
+                save_country_data(country_iso3, country_name, all_articles, pending_tasks=pending_tasks)
+                
+                scan_duration = time.time() - scan_start
+                return {
+                    "success": True,
+                    "country": country_name,
+                    "country_code": country_iso3,
+                    "total_articles": len(all_articles),
+                    "blogs": len(blogs),
+                    "publications": len(publications),
+                    "accelerator_lab_count": sum(1 for a in all_articles if a.get("classification") == "accelerator_lab"),
+                    "country_office_count": sum(1 for a in all_articles if a.get("classification") == "country_office"),
+                    "duration_seconds": round(scan_duration, 2),
+                    "status": "partial",
+                    "warning": "24-hour timeout reached. Publications incomplete. Use resume to continue."
+                }
+            
+            # No timeout - save complete data
             save_country_data(country_iso3, country_name, all_articles)
             
             scan_duration = time.time() - scan_start
@@ -441,6 +524,201 @@ def scan_single_country(country_name: str) -> Dict[str, Any]:
             "error": str(e)
         }
     finally:
+        # Always release distributed lock
+        release_scan_lock()
+        # Cleanup browser
+        cleanup_selenium()
+
+
+def resume_country_pending_tasks(country_code: str) -> Dict[str, Any]:
+    """
+    Resume pending tasks for a country that hit the 24-hour timeout.
+    
+    Args:
+        country_code: ISO3 country code (e.g., "ALB", "NGA")
+        
+    Returns:
+        dict: Result with success status and updated article counts
+    """
+    global _pause_requested
+    _pause_requested = False
+    
+    logger.info(f"Resuming pending tasks for country: {country_code}")
+    
+    # Try to acquire distributed lock
+    from .file_storage import acquire_scan_lock, release_scan_lock, load_country_data
+    
+    if not acquire_scan_lock():
+        logger.error("❌ Cannot resume - another instance is already running a scan")
+        return {
+            "success": False,
+            "error": "Another instance is already running a scan. Please wait for it to complete."
+        }
+    
+    try:
+        # Setup Selenium
+        setup_selenium()
+        from src.scraper.selenium_driver import driver
+        
+        # Load existing country data
+        country_data = load_country_data(country_code)
+        if not country_data:
+            return {
+                "success": False,
+                "error": f"Country {country_code} not found. Run initial scan first."
+            }
+        
+        # Check if there are pending tasks
+        pending_tasks = country_data.get("pending_tasks", {})
+        if not pending_tasks or country_data.get("status") == "complete":
+            return {
+                "success": False,
+                "error": f"No pending tasks for {country_code}. Country analysis is already complete."
+            }
+        
+        country_name = country_data["country_name"]
+        existing_articles = country_data.get("articles", [])
+        
+        logger.info(f"Found {len(existing_articles)} existing articles for {country_name}")
+        logger.info(f"Pending tasks: {pending_tasks}")
+        
+        # Discover country URL
+        from .country_discovery import discover_countries
+        countries = discover_countries()
+        
+        target_country = None
+        for country in countries:
+            from src.utils.geocoding import get_country_info
+            iso3, _, _ = get_country_info(country["name"])
+            if iso3 == country_code or country["name"].lower() == country_name.lower():
+                target_country = country
+                break
+        
+        if not target_country:
+            return {
+                "success": False,
+                "error": f"Could not find country URL for {country_name}"
+            }
+        
+        country_url = target_country["url"]
+        country_slug = target_country.get("slug", country_name.lower().replace(" ", "-"))
+        
+        # Update status
+        save_scan_status("running", {
+            "current_country": country_name,
+            "current_country_code": country_code,
+            "resume_mode": True,
+            "start_time": datetime.utcnow().isoformat()
+        })
+        
+        scan_start = time.time()
+        new_articles = []
+        
+        try:
+            # Resume blogs if incomplete
+            if not pending_tasks.get("blogs_complete", True):
+                logger.info(f"Resuming blog scanning for {country_name}...")
+                blogs, blogs_timeout = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=scan_start)
+                new_articles.extend(blogs)
+                
+                if blogs_timeout:
+                    logger.warning(f"⏱️ Timeout again during blog resume for {country_name}")
+                    pending_tasks["blogs_complete"] = False
+                    pending_tasks["blogs_processed"] = pending_tasks.get("blogs_processed", 0) + len(blogs)
+                else:
+                    pending_tasks["blogs_complete"] = True
+                    pending_tasks["blogs_processed"] = pending_tasks.get("blogs_processed", 0) + len(blogs)
+            
+            # Resume publications if incomplete (and blogs didn't timeout)
+            if not pending_tasks.get("publications_complete", True) and pending_tasks.get("blogs_complete", True):
+                logger.info(f"Resuming publication scanning for {country_name}...")
+                publications, pubs_timeout = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=scan_start)
+                new_articles.extend(publications)
+                
+                if pubs_timeout:
+                    logger.warning(f"⏱️ Timeout again during publication resume for {country_name}")
+                    pending_tasks["publications_complete"] = False
+                    pending_tasks["publications_processed"] = pending_tasks.get("publications_processed", 0) + len(publications)
+                else:
+                    pending_tasks["publications_complete"] = True
+                    pending_tasks["publications_processed"] = pending_tasks.get("publications_processed", 0) + len(publications)
+            
+            # Merge new articles with existing ones (avoid duplicates by URL)
+            existing_urls = {a.get("url") for a in existing_articles}
+            unique_new_articles = [a for a in new_articles if a.get("url") not in existing_urls]
+            
+            all_articles = existing_articles + unique_new_articles
+            
+            # Determine if all tasks complete
+            all_complete = pending_tasks.get("blogs_complete", True) and pending_tasks.get("publications_complete", True)
+            
+            # Save updated data
+            if all_complete:
+                logger.info(f"✅ All tasks completed for {country_name}!")
+                save_country_data(country_code, country_name, all_articles, pending_tasks=None)
+            else:
+                logger.warning(f"⚠️ Some tasks still pending for {country_name}")
+                save_country_data(country_code, country_name, all_articles, pending_tasks=pending_tasks)
+            
+            # Update summary
+            from .file_storage import calculate_summary, save_summary
+            summary = calculate_summary()
+            save_summary(summary)
+            
+            # Update status
+            save_scan_status("completed", {
+                "current_country": None,
+                "resume_mode": True,
+                "end_time": datetime.utcnow().isoformat()
+            })
+            
+            scan_duration = time.time() - scan_start
+            
+            return {
+                "success": True,
+                "country": country_name,
+                "country_code": country_code,
+                "total_articles": len(all_articles),
+                "new_articles": len(unique_new_articles),
+                "existing_articles": len(existing_articles),
+                "accelerator_lab_count": sum(1 for a in all_articles if a.get("classification") == "accelerator_lab"),
+                "country_office_count": sum(1 for a in all_articles if a.get("classification") == "country_office"),
+                "duration_seconds": round(scan_duration, 2),
+                "status": "complete" if all_complete else "partial",
+                "pending_tasks": pending_tasks if not all_complete else None
+            }
+            
+        except ScanPausedException:
+            logger.info(f"⏸️ Resume paused by user for {country_name}")
+            save_scan_status("paused", {
+                "current_country": country_name,
+                "resume_mode": True,
+                "paused_at": datetime.utcnow().isoformat()
+            })
+            return {
+                "success": False,
+                "error": "Resume was paused by user",
+                "country": country_name
+            }
+        except Exception as e:
+            logger.error(f"Error resuming {country_name}: {e}", exc_info=True)
+            save_scan_status("error", {}, error=str(e))
+            return {
+                "success": False,
+                "error": str(e),
+                "country": country_name
+            }
+    
+    except Exception as e:
+        logger.error(f"Failed to resume country tasks: {e}", exc_info=True)
+        save_scan_status("error", {}, error=str(e))
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        # Always release lock and cleanup
+        release_scan_lock()
         cleanup_selenium()
 
 
@@ -449,22 +727,29 @@ def run_full_scan():
     Run complete AcceleratorLab scan across all UNDP countries.
     Supports resuming from last processed country if scan was interrupted.
     This is the main entry point for the scanning process.
+    
+    IMPORTANT: Browser is restarted after each country to prevent memory issues.
+    Uses distributed locking for Azure multi-instance deployments.
     """
     global _pause_requested
     _pause_requested = False  # Reset pause flag at start
     
     logger.info("Starting AcceleratorLab full scan")
     
+    # Try to acquire distributed lock (prevents concurrent scans across Azure instances)
+    from .file_storage import acquire_scan_lock, release_scan_lock, renew_scan_lock
+    
+    if not acquire_scan_lock():
+        logger.error("❌ Cannot start scan - another instance is already running a scan")
+        save_scan_status("error", {}, error="Another instance is already running a scan")
+        return
+    
     try:
         # Check if there's a previous scan to resume
         from .file_storage import get_all_countries
         processed_countries = set(get_all_countries())
         
-        # Setup Selenium
-        setup_selenium()
-        from src.scraper.selenium_driver import driver
-        
-        # Discover all countries
+        # Discover all countries (no Selenium needed for discovery)
         logger.info("Discovering UNDP countries...")
         countries = discover_countries()
         total_countries = len(countries)
@@ -505,7 +790,13 @@ def run_full_scan():
         })
         
         # Process each country (only unprocessed ones)
+        # IMPORTANT: Browser is restarted for each country to prevent memory issues
         for idx, country in enumerate(countries_to_process, 1):
+            # Setup Selenium for this country (fresh browser)
+            logger.info(f"🌍 Starting browser for country {idx}/{len(countries_to_process)}...")
+            setup_selenium()
+            from src.scraper.selenium_driver import driver
+            
             try:
                 # Check if pause was requested
                 check_if_paused()
@@ -526,6 +817,9 @@ def run_full_scan():
                 logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
                 logger.info(f"📊 Progress: {current_completed}/{total_countries} countries, {len(countries_to_process) - idx} remaining")
                 
+                # Renew distributed lock (60 second lease)
+                renew_scan_lock()
+                
                 # Update status with accurate progress
                 save_scan_status("running", {
                     "current_country": country_name,
@@ -540,27 +834,50 @@ def run_full_scan():
                 
                 country_start_time = time.time()
                 try:
-                    # Scan blogs (with timeout and limits)
-                    blogs = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
+                    # Scan blogs (with 24h country-level timeout tracking)
+                    blogs, blogs_timeout = scan_country_blogs(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=country_start_time)
                     
-                    # Check if we've spent too long on this country
-                    country_elapsed = time.time() - country_start_time
-                    if country_elapsed > 172800:  # 48 hours max per country total (24h blogs + 24h publications)
-                        logger.error(f"CRITICAL TIMEOUT: {country_name} took {country_elapsed/3600:.1f} hours, skipping publications")
-                        publications = []
+                    # Check if 24-hour timeout occurred during blogs
+                    if blogs_timeout:
+                        logger.warning(f"⏱️ 24-hour timeout reached for {country_name} during blog scanning")
+                        # Save partial results with pending tasks
+                        pending_tasks = {
+                            "blogs_complete": False,
+                            "publications_complete": False,
+                            "timeout_at": datetime.utcnow().isoformat(),
+                            "blogs_processed": len(blogs),
+                            "publications_processed": 0,
+                            "reason": "24h_timeout_during_blogs"
+                        }
+                        save_country_data(country_iso3, country_name, blogs, pending_tasks=pending_tasks)
+                        logger.info(f"✅ Saved {len(blogs)} partial results for {country_name}. Skipping publications and moving to next country.")
                     else:
-                        # Scan publications (with timeout and limits)
-                        publications = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30)
-                    
-                    # Combine results
-                    all_articles = blogs + publications
-                    
-                    # Save country data using ISO3 code (even if empty, to mark as processed)
-                    save_country_data(country_iso3, country_name, all_articles)
-                    if all_articles:
-                        logger.info(f"Saved {len(all_articles)} articles for {country_name} ({country_iso3})")
-                    else:
-                        logger.warning(f"No articles found for {country_name} ({country_iso3})")
+                        # Scan publications (with 24h country-level timeout tracking)
+                        publications, pubs_timeout = scan_country_publications(driver, country_url, country_slug, country_name, max_articles=200, timeout_per_article=30, country_start_time=country_start_time)
+                        
+                        # Combine results
+                        all_articles = blogs + publications
+                        
+                        # Check if timeout occurred during publications
+                        if pubs_timeout:
+                            logger.warning(f"⏱️ 24-hour timeout reached for {country_name} during publication scanning")
+                            pending_tasks = {
+                                "blogs_complete": True,
+                                "publications_complete": False,
+                                "timeout_at": datetime.utcnow().isoformat(),
+                                "blogs_processed": len(blogs),
+                                "publications_processed": len(publications),
+                                "reason": "24h_timeout_during_publications"
+                            }
+                            save_country_data(country_iso3, country_name, all_articles, pending_tasks=pending_tasks)
+                            logger.info(f"✅ Saved {len(all_articles)} partial results for {country_name}. Moving to next country.")
+                        else:
+                            # Complete scan - no timeout
+                            save_country_data(country_iso3, country_name, all_articles)
+                            if all_articles:
+                                logger.info(f"✅ Saved {len(all_articles)} articles for {country_name} ({country_iso3})")
+                            else:
+                                logger.warning(f"No articles found for {country_name} ({country_iso3})")
                     
                 except ScanPausedException:
                     # Re-raise to be caught by outer handler
@@ -586,7 +903,8 @@ def run_full_scan():
                         logger.warning(f"Failed to update summary: {summary_error}")
             
             except ScanPausedException:
-                # Pause was requested - save state and exit
+                # Pause was requested - cleanup browser and save state
+                cleanup_selenium()
                 current_completed = skipped_count + idx - 1
                 logger.info(f"⏸️  Scan paused by user at {current_completed}/{total_countries} countries")
                 save_scan_status("paused", {
@@ -598,6 +916,11 @@ def run_full_scan():
                     "paused_at": datetime.utcnow().isoformat()
                 })
                 return  # Exit the scan
+            
+            finally:
+                # CRITICAL: Cleanup browser after each country to prevent memory issues
+                logger.info(f"🧹 Cleaning up browser after {country_name}...")
+                cleanup_selenium()
         
         # Calculate and save summary
         logger.info("Calculating summary statistics...")
@@ -620,7 +943,13 @@ def run_full_scan():
         save_scan_status("error", {}, error=str(e))
         
     finally:
-        cleanup_selenium()
+        # Always release distributed lock
+        release_scan_lock()
+        # Final browser cleanup (in case not cleaned up in loop)
+        try:
+            cleanup_selenium()
+        except Exception:
+            pass
 
 
 def start_scan_async():

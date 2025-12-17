@@ -12,7 +12,8 @@ from src.acceleratorlab import (
     load_summary,
     pause_scan,
     start_single_country_scan_async,
-    resume_country_pending_tasks
+    resume_country_pending_tasks,
+    force_break_lock
 )
 from src.api.auth import require_api_key
 
@@ -176,6 +177,48 @@ def pause_scan_endpoint():
             
     except Exception as e:
         logger.error(f"Error pausing scan: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@acceleratorlab_bp.route("/scan/break-lock", methods=["POST"])
+def break_lock():
+    """
+    Force break the distributed lock (emergency use only).
+    
+    POST /acceleratorlab/scan/break-lock
+    Requires: API key authentication
+    
+    Use this when a lock is stuck and blocking all scans.
+    
+    Returns:
+        JSON response with success status and message
+    """
+    # Check API key
+    ok, err = require_api_key()
+    if not ok:
+        return jsonify({"error": err}), 401
+    
+    logger.warning("⚠️  Received request to force break scan lock")
+    
+    try:
+        success, message = force_break_lock()
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": message
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": message
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error breaking lock: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

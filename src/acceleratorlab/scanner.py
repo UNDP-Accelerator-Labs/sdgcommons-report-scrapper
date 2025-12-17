@@ -1060,27 +1060,85 @@ def pause_scan() -> tuple[bool, str]:
 def auto_resume_scan_if_needed():
     """
     Check if a scan was interrupted and automatically resume it.
-    Called on server startup.
+    
+    **DISABLED**: This function is intentionally disabled to prevent automatic
+    scan restarts on server startup, which causes issues in multi-instance
+    Azure deployments. Scans should only be started manually via API or dashboard.
+    
+    To resume an interrupted scan, use the manual resume endpoint:
+    POST /acceleratorlab/scan/continue
     """
     try:
         status = load_scan_status()
         
         # Check if scan was running when server stopped
         if status.get("status") == "running":
-            logger.info("🔄 Detected interrupted scan - auto-resuming...")
+            logger.warning("⚠️  Detected interrupted scan status='running' on startup")
+            logger.warning("⚠️  Auto-resume is DISABLED. The scan will NOT restart automatically.")
+            logger.info("📌 Use POST /acceleratorlab/scan/continue to manually resume the scan if needed")
             
-            # Reset status to idle first (prevents "scan already running" error)
-            save_scan_status("idle", {})
-            
-            # Start the scan (will automatically resume from where it left off)
-            success, message = start_scan_async()
-            
-            if success:
-                logger.info(f"✅ Auto-resume successful: {message}")
-            else:
-                logger.warning(f"⚠️  Auto-resume failed: {message}")
+            # DO NOT auto-start! Just log the status
+            # Old code that caused issues:
+            # save_scan_status("idle", {})
+            # success, message = start_scan_async()
         else:
-            logger.debug(f"No interrupted scan detected (status: {status.get('status')})")
+            logger.debug(f"Scan status on startup: {status.get('status')}")
             
     except Exception as e:
-        logger.error(f"Error during auto-resume check: {e}", exc_info=True)
+        logger.error(f"Error checking scan status: {e}", exc_info=True)
+
+
+def cleanup_stale_scan_on_startup():
+    """
+    Clean up stale scan status on application startup.
+    This prevents ghost "running" status from blocking new scans.
+    
+    Called once when the application starts.
+    """
+    try:
+        from .file_storage import load_scan_status, save_scan_status, force_break_lock
+        from datetime import datetime, timezone
+        
+        status = load_scan_status()
+        current_status = status.get("status")
+        
+        if current_status == "running":
+            last_updated = status.get("last_updated")
+            
+            if last_updated:
+                try:
+                    last_update_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+                    now = datetime.now(timezone.utc)
+                    age_hours = (now - last_update_time.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+                    
+                    if age_hours > 1:  # More than 1 hour old
+                        logger.warning(f"⚠️  Found stale 'running' status from {age_hours:.1f} hours ago on startup")
+                        logger.info("🧹 Cleaning up stale scan status and breaking lock...")
+                        
+                        # Break the lock and reset status
+                        force_break_lock()
+                        save_scan_status("idle", {}, error="Cleaned up stale status on startup")
+                        
+                        logger.info("✅ Stale scan status cleaned up successfully")
+                    else:
+                        logger.info(f"🔄 Recent scan detected ({age_hours:.1f} hours old) - leaving status unchanged")
+                except Exception as e:
+                    logger.warning(f"Could not parse last_updated time: {e}")
+                    # If we can't parse the time, assume it's stale
+                    logger.info("🧹 Cleaning up unparseable scan status...")
+                    force_break_lock()
+                    save_scan_status("idle", {}, error="Cleaned up on startup")
+            else:
+                # No last_updated field - definitely stale
+                logger.warning("⚠️  Found 'running' status with no timestamp - cleaning up...")
+                force_break_lock()
+                save_scan_status("idle", {}, error="Cleaned up on startup")
+                
+        elif current_status in ["error", "paused"]:
+            logger.info(f"📌 Scan status on startup: {current_status}")
+        else:
+            logger.debug(f"Scan status on startup: {current_status or 'idle'}")
+            
+    except Exception as e:
+        logger.error(f"Error during startup cleanup: {e}", exc_info=True)
+

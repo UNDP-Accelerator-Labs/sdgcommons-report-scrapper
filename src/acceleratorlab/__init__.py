@@ -22,9 +22,10 @@ from .file_storage import (
     calculate_summary,
     acquire_scan_lock,
     release_scan_lock,
-    renew_scan_lock
+    renew_scan_lock,
+    force_break_lock
 )
-from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed, pause_scan, scan_single_country, start_single_country_scan_async, resume_country_pending_tasks
+from .scanner import start_scan_async, get_scan_status, run_full_scan, auto_resume_scan_if_needed, pause_scan, scan_single_country, start_single_country_scan_async, resume_country_pending_tasks, cleanup_stale_scan_on_startup
 
 __all__ = [
     'ACCELERATORLAB_KEYWORDS',
@@ -49,11 +50,13 @@ __all__ = [
     'acquire_scan_lock',
     'release_scan_lock',
     'renew_scan_lock',
+    'force_break_lock',
     'start_scan_async',
     'get_scan_status',
     'pause_scan',
     'scan_single_country',
     'start_single_country_scan_async',
     'resume_country_pending_tasks',
+    'cleanup_stale_scan_on_startup',
     'run_full_scan',
 ]

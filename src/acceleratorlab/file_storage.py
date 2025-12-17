@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
@@ -400,16 +401,98 @@ def acquire_scan_lock() -> bool:
         
         # Try to acquire lease (60 second lease, auto-renewed during scan)
         lease_client = blob_client.get_blob_lease_client()
-        _scan_lock_lease = lease_client.acquire(lease_duration=60)
-        
-        instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
-        logger.info(f"✅ Acquired distributed scan lock (instance: {instance_id})")
-        return True
+        try:
+            _scan_lock_lease = lease_client.acquire(lease_duration=60)
+            instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+            logger.info(f"✅ Acquired distributed scan lock (instance: {instance_id})")
+            return True
+        except Exception as lease_error:
+            # If lease already exists, try to break it if it's been too long
+            error_msg = str(lease_error).lower()
+            if "already" in error_msg or "lease" in error_msg:
+                logger.warning(f"⚠️  Lock already held. Checking if stale...")
+                
+                # Check status to see if scan is actually running
+                status_data = _load_from_blob(blob_name)
+                if status_data:
+                    last_updated = status_data.get("last_updated")
+                    if last_updated:
+                        from datetime import datetime, timezone
+                        last_update_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+                        now = datetime.now(timezone.utc)
+                        age_seconds = (now - last_update_time.replace(tzinfo=timezone.utc)).total_seconds()
+                        
+                        # If status hasn't been updated in 2 hours, consider it stale
+                        if age_seconds > 7200:
+                            logger.warning(f"⚠️  Lock is stale (last updated {age_seconds/3600:.1f} hours ago). Breaking lease...")
+                            try:
+                                lease_client.break_lease(lease_break_period=0)
+                                time.sleep(2)  # Wait for lease to break
+                                # Try again
+                                _scan_lock_lease = lease_client.acquire(lease_duration=60)
+                                instance_id = os.getenv("WEBSITE_INSTANCE_ID", "local")
+                                logger.info(f"✅ Acquired distributed scan lock after breaking stale lease (instance: {instance_id})")
+                                return True
+                            except Exception as break_error:
+                                logger.error(f"Failed to break stale lease: {break_error}")
+                                return False
+                
+                logger.error(f"Cannot acquire lock - another scan is actively running")
+                return False
+            else:
+                raise
         
     except Exception as e:
         logger.warning(f"Failed to acquire scan lock: {e}")
         _scan_lock_lease = None
         return False
+
+
+def force_break_lock() -> tuple[bool, str]:
+    """
+    Force break the distributed lock (emergency use only).
+    Use this when a lock is stuck and blocking all scans.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    if not _use_azure_storage:
+        return True, "Local environment - no lock to break"
+    
+    try:
+        blob_service_client = _get_blob_service_client()
+        if not blob_service_client:
+            return False, "Blob service unavailable"
+        
+        blob_name = "scan_status.json"
+        blob_client = blob_service_client.get_blob_client(
+            container=Settings.AZURE_STORAGE_CONTAINER,
+            blob=blob_name
+        )
+        
+        if not blob_client.exists():
+            return False, "Lock blob does not exist"
+        
+        # Try to break the lease
+        lease_client = blob_client.get_blob_lease_client()
+        try:
+            lease_client.break_lease(lease_break_period=0)
+            logger.info("🔨 Force broke distributed scan lock")
+            
+            # Reset status to idle
+            save_scan_status("idle", {}, error=None)
+            
+            return True, "Lock broken successfully. Status reset to idle."
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no lease" in error_msg or "not leased" in error_msg:
+                return True, "No active lease found - lock is already free"
+            else:
+                return False, f"Failed to break lease: {str(e)}"
+        
+    except Exception as e:
+        logger.error(f"Error breaking lock: {e}")
+        return False, f"Error: {str(e)}"
 
 
 def release_scan_lock():

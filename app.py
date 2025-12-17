@@ -15,6 +15,7 @@ from flask_cors import CORS
 from src.api import health_bp, scraper_bp, upload_bp
 from src.api.acceleratorlab_routes import acceleratorlab_bp
 from src.scheduler import init_scheduler
+from src.acceleratorlab import cleanup_stale_scan_on_startup
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -60,6 +61,9 @@ def dashboard():
     """AcceleratorLab scanner dashboard"""
     return render_template('acceleratorlab_dashboard.html')
 
+
+# Clean up any stale scan status on startup
+cleanup_stale_scan_on_startup()
 
 # Initialize scheduler for production
 init_scheduler()

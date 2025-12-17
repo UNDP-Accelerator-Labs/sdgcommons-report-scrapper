@@ -1101,8 +1101,12 @@ def cleanup_stale_scan_on_startup():
         
         status = load_scan_status()
         current_status = status.get("status")
+        error_msg = status.get("error", "")
         
-        if current_status == "running":
+        # Check if error is lock-related
+        is_lock_error = current_status == "error" and "another instance" in error_msg.lower()
+        
+        if current_status == "running" or is_lock_error:
             last_updated = status.get("last_updated")
             
             if last_updated:
@@ -1112,30 +1116,34 @@ def cleanup_stale_scan_on_startup():
                     age_hours = (now - last_update_time.replace(tzinfo=timezone.utc)).total_seconds() / 3600
                     
                     if age_hours > 1:  # More than 1 hour old
-                        logger.warning(f"⚠️  Found stale 'running' status from {age_hours:.1f} hours ago on startup")
+                        logger.warning(f"⚠️  Found stale '{current_status}' status from {age_hours:.1f} hours ago on startup")
+                        if is_lock_error:
+                            logger.warning(f"   Error was: {error_msg}")
                         logger.info("🧹 Cleaning up stale scan status and breaking lock...")
                         
                         # Break the lock and reset status
                         force_break_lock()
-                        save_scan_status("idle", {}, error="Cleaned up stale status on startup")
+                        save_scan_status("idle", {})
                         
                         logger.info("✅ Stale scan status cleaned up successfully")
                     else:
-                        logger.info(f"🔄 Recent scan detected ({age_hours:.1f} hours old) - leaving status unchanged")
+                        logger.info(f"🔄 Recent {current_status} detected ({age_hours:.1f} hours old) - leaving status unchanged")
                 except Exception as e:
                     logger.warning(f"Could not parse last_updated time: {e}")
                     # If we can't parse the time, assume it's stale
                     logger.info("🧹 Cleaning up unparseable scan status...")
                     force_break_lock()
-                    save_scan_status("idle", {}, error="Cleaned up on startup")
+                    save_scan_status("idle", {})
             else:
                 # No last_updated field - definitely stale
-                logger.warning("⚠️  Found 'running' status with no timestamp - cleaning up...")
+                logger.warning(f"⚠️  Found '{current_status}' status with no timestamp - cleaning up...")
                 force_break_lock()
-                save_scan_status("idle", {}, error="Cleaned up on startup")
+                save_scan_status("idle", {})
                 
         elif current_status in ["error", "paused"]:
             logger.info(f"📌 Scan status on startup: {current_status}")
+            if current_status == "error":
+                logger.info(f"   Error message: {error_msg}")
         else:
             logger.debug(f"Scan status on startup: {current_status or 'idle'}")
             

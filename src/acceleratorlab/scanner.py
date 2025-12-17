@@ -320,15 +320,15 @@ def scan_single_country(country_name: str) -> Dict[str, Any]:
     
     logger.info(f"Starting single country scan for: {country_name}")
     
-    # Try to acquire distributed lock (prevents concurrent scans across Azure instances)
-    from .file_storage import acquire_scan_lock, release_scan_lock
-    
-    if not acquire_scan_lock():
-        logger.error("❌ Cannot start scan - another instance is already running a scan")
-        return {
-            "success": False,
-            "error": "Another instance is already running a scan. Please wait for it to complete."
-        }
+    # DISABLED: Distributed locking not working in Azure Web App
+    # from .file_storage import acquire_scan_lock, release_scan_lock
+    # 
+    # if not acquire_scan_lock():
+    #     logger.error("❌ Cannot start scan - another instance is already running a scan")
+    #     return {
+    #         "success": False,
+    #         "error": "Another instance is already running a scan. Please wait for it to complete."
+    #     }
     
     try:
         # Setup Selenium
@@ -524,8 +524,8 @@ def scan_single_country(country_name: str) -> Dict[str, Any]:
             "error": str(e)
         }
     finally:
-        # Always release distributed lock
-        release_scan_lock()
+        # DISABLED: Distributed locking not working in Azure Web App
+        # release_scan_lock()
         # Cleanup browser
         cleanup_selenium()
 
@@ -545,15 +545,16 @@ def resume_country_pending_tasks(country_code: str) -> Dict[str, Any]:
     
     logger.info(f"Resuming pending tasks for country: {country_code}")
     
-    # Try to acquire distributed lock
-    from .file_storage import acquire_scan_lock, release_scan_lock, load_country_data
-    
-    if not acquire_scan_lock():
-        logger.error("❌ Cannot resume - another instance is already running a scan")
-        return {
-            "success": False,
-            "error": "Another instance is already running a scan. Please wait for it to complete."
-        }
+    # DISABLED: Distributed locking not working in Azure Web App
+    # from .file_storage import acquire_scan_lock, release_scan_lock, load_country_data
+    from .file_storage import load_country_data
+    # 
+    # if not acquire_scan_lock():
+    #     logger.error("❌ Cannot resume - another instance is already running a scan")
+    #     return {
+    #         "success": False,
+    #         "error": "Another instance is already running a scan. Please wait for it to complete."
+    #     }
     
     try:
         # Setup Selenium
@@ -717,8 +718,8 @@ def resume_country_pending_tasks(country_code: str) -> Dict[str, Any]:
             "error": str(e)
         }
     finally:
-        # Always release lock and cleanup
-        release_scan_lock()
+        # DISABLED: Distributed locking not working in Azure Web App
+        # release_scan_lock()
         cleanup_selenium()
 
 
@@ -736,13 +737,13 @@ def run_full_scan():
     
     logger.info("Starting AcceleratorLab full scan")
     
-    # Try to acquire distributed lock (prevents concurrent scans across Azure instances)
-    from .file_storage import acquire_scan_lock, release_scan_lock, renew_scan_lock
-    
-    if not acquire_scan_lock():
-        logger.error("❌ Cannot start scan - another instance is already running a scan")
-        save_scan_status("error", {}, error="Another instance is already running a scan")
-        return
+    # DISABLED: Distributed locking not working in Azure Web App
+    # from .file_storage import acquire_scan_lock, release_scan_lock, renew_scan_lock
+    # 
+    # if not acquire_scan_lock():
+    #     logger.error("❌ Cannot start scan - another instance is already running a scan")
+    #     save_scan_status("error", {}, error="Another instance is already running a scan")
+    #     return
     
     try:
         # Check if there's a previous scan to resume
@@ -817,8 +818,8 @@ def run_full_scan():
                 logger.info(f"Processing ({current_completed + 1}/{total_countries}): {country_name} ({country_iso3})")
                 logger.info(f"📊 Progress: {current_completed}/{total_countries} countries, {len(countries_to_process) - idx} remaining")
                 
-                # Renew distributed lock (60 second lease)
-                renew_scan_lock()
+                # DISABLED: Distributed locking not working in Azure Web App
+                # renew_scan_lock()
                 
                 # Update status with accurate progress
                 save_scan_status("running", {
@@ -943,8 +944,8 @@ def run_full_scan():
         save_scan_status("error", {}, error=str(e))
         
     finally:
-        # Always release distributed lock
-        release_scan_lock()
+        # DISABLED: Distributed locking not working in Azure Web App
+        # release_scan_lock()
         # Final browser cleanup (in case not cleaned up in loop)
         try:
             cleanup_selenium()

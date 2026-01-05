@@ -3,9 +3,12 @@
 ACCELERATORLAB_KEYWORDS = {
     "en": [
         "accelerator lab",
+        "accelerator labs",
         "innovation-acclab",
         "acclab",
         "acceleratorlab",
+        "united nations accelerator lab",
+        "undp accelerator lab",
         "AccLabGM",
         "Head of Exploration",
         "Head of Experimentation",
@@ -13,35 +16,72 @@ ACCELERATORLAB_KEYWORDS = {
     ],
     "fr": [
         "laboratoire d'acceleration",
-        "accelerateur lab",
-        "laboratoire d'accelerateur",
         "laboratoires d'acceleration",
-        "laboratoires d'accelerateur",
+        "laboratoire d'accélération",
+        "laboratoires d'accélération",
+        "laboratoire d'innovation",
+        "laboratoires d'innovation",
+        "accélérateur",
+        "accélérateurs",
+        "accelerateur lab",
         "accelerator lab",
         "Laboratoires d'Accélération",
-        "Laboratoires d'Accélération"
+        "laboratoire d'accélération des Nations unies",
+        "Laboratoire d'accélération du PNUD",
+        "Responsable de l'exploration",
+        "Responsable de l'expérimentation",
+        "Responsable de la cartographie des solutions"
     ],
     "es": [
         "laboratorios de aceleracion",
         "laboratorio de aceleracion",
-        "LabPNUDArg",
-        "Aceleración del PNUD"
+        "laboratorio de innovación",
+        "laboratorios de innovación",
+        "labpnudarg",
+        "lab pnud",
+        "aceleracion del pnud",
+        "acelerador",
+        "aceleradores",
+        "laboratorio de aceleración",
+        "laboratorios de aceleración",
+        "laboratorio de aceleración de las Naciones Unidas",
+        "Laboratorio de Aceleración del PNUD",
+        "Jefe de Exploración",
+        "Responsable de Exploración",
+        "Responsable de Experimentación",
+        "Responsable de mapeo de soluciones"
     ],
     "pt": [
         "laboratorios aceleradores",
         "laboratorio acelerador",
+        "laboratorio de inovação",
+        "laboratorios de inovação",
         "acclab",
-        "Laboratório de Aceleração"
+        "laboratório de aceleração",
+        "acelerador",
+        "aceleradores",
+        "Laboratório de Aceleração",
+        "laboratório de aceleração das Nações Unidas",
+        "Laboratório de Aceleração do PNUD",
+        "Responsável pela Exploração",
+        "Responsável pela Experimentação",
+        "Responsável pelo Mapeamento de Soluções"
     ],
     "uk": [
         "Лабораторії інноваційного розвитку",
-        "Лабораторія інноваційного розвитку"
+        "Лабораторія інноваційного розвитку",
+        "лабораторія акселерації",
+        "лабораторія акселераторів",
+        "керівник з досліджень",
+        "керівник з експериментів",
+        "керівник з картографії рішень"
     ],
     "az": ["akselerator laboratoriyası"],
     "tr": ["Hızlandırma laboratuvarı"],
     "sr": ["laboratorija za ubrzani razvoj"],
     "uz": ["akselerator laboratoriyasi"],
-    "ru": ["Акселератор Лаборатория"]
+    "ru": ["Акселератор Лаборатория", "лаборатория акселератора", "лаборатория инноваций", "лаборатория акселерации ООН", "лаборатория акселерации ПРООН", "Руководитель по исследованиям", "Руководитель по экспериментам", "Руководитель по картированию решений"],
+    "ar": ["مختبر المسرع", "مختبرات المسرع", "مختبر الابتكار", "مختبرات الابتكار"]
 }
 
 # Flatten all keywords for easy searching

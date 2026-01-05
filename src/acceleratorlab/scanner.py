@@ -65,12 +65,53 @@ def scan_country_blogs(driver, country_url: str, country_code: str, country_name
     # Use country-level start time if provided (for 24h overall timeout)
     overall_start = country_start_time or scan_start_time
     
-    # Only scan /blogs page (exclude /news and /stories)
-    blogs_patterns = [
-        f"{country_url}/blogs",
-        f"{country_url}/blog"
-    ]
-    
+    def build_listing_patterns(base_url: str, kind: str):
+        """Return candidate listing URLs for blogs or publications based on language in base_url."""
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        parts = parsed.path.strip('/').split('/')
+        candidates = []
+
+        # Detect language code if present (e.g., /es/argentina -> 'es')
+        lang = None
+        if len(parts) >= 2 and len(parts[0]) == 2:
+            lang = parts[0].lower()
+
+        if kind == 'blogs':
+            # Language-specific terms first
+            terms_by_lang = {
+                'es': ['blog', 'blogs', 'historias'],
+                'fr': ['blog', 'blogs', 'histoires', 'actualites'],
+                'pt': ['blog', 'blogs', 'historias', 'noticias'],
+                'it': ['blog', 'blogs', 'storie'],
+                'de': ['blog', 'blogs', 'geschichten']
+            }
+            default_terms = ['blogs', 'blog', 'news', 'stories']
+        else:
+            terms_by_lang = {
+                'es': ['publicaciones', 'publicacion', 'publications'],
+                'fr': ['publications', 'publication'],
+                'pt': ['publicacoes', 'publicacoes', 'publications'],
+                'it': ['pubblicazioni', 'pubblicazione'],
+                'de': ['publikationen', 'publikation']
+            }
+            default_terms = ['publications']
+
+        if lang and lang in terms_by_lang:
+            for t in terms_by_lang[lang]:
+                candidates.append(f"{base_url}/{t}")
+
+        # Add defaults
+        for t in default_terms:
+            url = f"{base_url}/{t}"
+            if url not in candidates:
+                candidates.append(url)
+
+        return candidates
+
+    # Iterate candidate blog listing URLs (language-aware)
+    blogs_patterns = build_listing_patterns(country_url, 'blogs')
+
     for blogs_url in blogs_patterns:
         try:
             driver.get(blogs_url)
@@ -199,11 +240,41 @@ def scan_country_publications(driver, country_url: str, country_code: str, count
     # Use country-level start time if provided (for 24h overall timeout)
     overall_start = country_start_time or scan_start_time
     
-    # Only scan /publications page
-    pubs_patterns = [
-        f"{country_url}/publications"
-    ]
-    
+    def build_listing_patterns(base_url: str, kind: str):
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        parts = parsed.path.strip('/').split('/')
+        candidates = []
+        lang = None
+        if len(parts) >= 2 and len(parts[0]) == 2:
+            lang = parts[0].lower()
+
+        if kind == 'blogs':
+            terms_by_lang = {}
+            default_terms = ['blogs', 'blog']
+        else:
+            terms_by_lang = {
+                'es': ['publicaciones', 'publicacion', 'publications'],
+                'fr': ['publications', 'publication'],
+                'pt': ['publicacoes', 'publications'],
+                'it': ['pubblicazioni', 'publication'],
+                'de': ['publikationen', 'publication']
+            }
+            default_terms = ['publications']
+
+        if lang and lang in terms_by_lang:
+            for t in terms_by_lang[lang]:
+                candidates.append(f"{base_url}/{t}")
+
+        for t in default_terms:
+            url = f"{base_url}/{t}"
+            if url not in candidates:
+                candidates.append(url)
+
+        return candidates
+
+    pubs_patterns = build_listing_patterns(country_url, 'publications')
+
     for pubs_url in pubs_patterns:
         try:
             driver.get(pubs_url)

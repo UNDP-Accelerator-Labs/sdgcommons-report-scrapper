@@ -59,6 +59,26 @@ def setup_selenium():
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
+    # Enable Chrome's translate feature and whitelist common languages to English
+    try:
+        translate_prefs = {
+            "translate_whitelists": {
+                "es": "en",
+                "fr": "en",
+                "pt": "en",
+                "it": "en",
+                "de": "en"
+            },
+            "translate": {"enabled": True}
+        }
+        # Merge into prefs
+        prefs.update(translate_prefs)
+        chrome_options.add_experimental_option("prefs", prefs)
+        # Set browser UI language to English to encourage translation UI
+        chrome_options.add_argument("--lang=en-US")
+    except Exception:
+        pass
+
     # Install via webdriver-manager
     try:
         driver_path = ChromeDriverManager().install()
